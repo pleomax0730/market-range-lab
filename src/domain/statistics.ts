@@ -1,4 +1,4 @@
-import type { RiskGrade, RiskSide } from './types'
+import type { DownsideDistributionPoint, RiskGrade, RiskSide } from './types'
 import { GRADE_THRESHOLDS } from './model'
 
 export type HistoricalPath = { closeReturn: number; lowReturn: number; highReturn: number }
@@ -10,6 +10,52 @@ export function quantile(values: number[], probability: number) {
   const lower = Math.floor(position)
   const fraction = position - lower
   return sorted[lower + 1] === undefined ? sorted[lower] : sorted[lower] + fraction * (sorted[lower + 1] - sorted[lower])
+}
+
+function countAtOrBelow(sortedValues: number[], threshold: number) {
+  let low = 0
+  let high = sortedValues.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (sortedValues[middle] <= threshold) low = middle + 1
+    else high = middle
+  }
+  return low
+}
+
+export function buildDownsideDistribution(
+  paths: HistoricalPath[],
+  maximumReturn: number,
+  maximumPoints = 180,
+): DownsideDistributionPoint[] {
+  if (!paths.length || !Number.isFinite(maximumReturn)) return []
+  const closes = paths.map((path) => path.closeReturn).sort((a, b) => a - b)
+  const lows = paths.map((path) => path.lowReturn).sort((a, b) => a - b)
+  const minimumReturn = Math.min(closes[0], lows[0], maximumReturn)
+  const span = Math.max(0.01, maximumReturn - minimumReturn)
+  const baseline = Math.max(-0.9999, minimumReturn - span * 0.03)
+  const thresholds = [
+    baseline,
+    ...closes.filter((value) => value >= minimumReturn && value <= maximumReturn),
+    ...lows.filter((value) => value >= minimumReturn && value <= maximumReturn),
+    maximumReturn,
+  ].sort((a, b) => a - b)
+  const unique = thresholds.filter(
+    (value, index) => index === 0 || value !== thresholds[index - 1],
+  )
+  const pointLimit = Math.max(2, Math.floor(maximumPoints))
+  const selected =
+    unique.length <= pointLimit
+      ? unique
+      : Array.from({ length: pointLimit }, (_, index) =>
+          unique[Math.round((index * (unique.length - 1)) / (pointLimit - 1))],
+        ).filter((value, index, values) => index === 0 || value !== values[index - 1])
+
+  return selected.map((returnPct) => ({
+    returnPct,
+    expirationBreach: countAtOrBelow(closes, returnPct) / paths.length,
+    pathTouch: countAtOrBelow(lows, returnPct) / paths.length,
+  }))
 }
 
 export function wilsonUpper(rate: number, sampleSize: number, z = 1.959963984540054) {

@@ -22,6 +22,7 @@ import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
 import { applyGradePause } from "./domain/export-analysis";
 import { useHistoricalAnalysis } from "./hooks/use-historical-analysis";
 import { TermHelp } from "./components/term-help";
+import { DownsideDistributionChart } from "./components/downside-distribution-chart";
 import type {
   HistoryDataset,
   HorizonAnalysis,
@@ -785,7 +786,16 @@ export function App() {
                   </div>
                 </div>
                 {selected && (
-                  <RiskTable analysis={selected} stale={gradePaused} />
+                  <RiskTable
+                    analysis={selected}
+                    stale={gradePaused}
+                    anchorPrice={anchorPrice}
+                    candidate={
+                      candidateSide === "lower" && Number(candidate) > 0
+                        ? Number(candidate)
+                        : undefined
+                    }
+                  />
                 )}
               </section>
 
@@ -955,9 +965,13 @@ export function App() {
 function RiskTable({
   analysis,
   stale,
+  anchorPrice,
+  candidate,
 }: {
   analysis: HorizonAnalysis;
   stale: boolean;
+  anchorPrice: number;
+  candidate?: number;
 }) {
   const rows = [
     analysis.lower[0],
@@ -966,8 +980,15 @@ function RiskTable({
     analysis.upper[0],
   ];
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] border-collapse text-sm">
+    <div>
+      <DownsideDistributionChart
+        analysis={analysis}
+        anchorPrice={anchorPrice}
+        candidate={candidate}
+        stale={stale}
+      />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-sm">
         <thead>
           <tr className="border-y border-[#E5E5E5] bg-[#FAFAFA] text-left text-xs text-[#6B7280]">
             <th className="px-3 py-2.5">方向</th>
@@ -1025,7 +1046,8 @@ function RiskTable({
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
       <div className="desktop-detail mt-4 grid grid-cols-2 gap-3 text-xs text-[#565656] lg:grid-cols-4">
         <div>
           <span className="block text-[#6B7280]">目標收盤</span>

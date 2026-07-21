@@ -1,6 +1,6 @@
 import { differenceInCalendarDays, getDay, parseISO } from 'date-fns'
 import { isFinalRegularSessionOfWeek, targetWeekClose } from './market-calendar'
-import { candidateForThreshold, quantile, type HistoricalPath } from './statistics'
+import { buildDownsideDistribution, candidateForThreshold, quantile, type HistoricalPath } from './statistics'
 import type { HorizonAnalysis, PriceBar } from './types'
 
 export type AnalysisInput = {
@@ -135,19 +135,25 @@ export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
     const lowerEvt = estimateEvtStress(lows, 'lower')
     const upperEvt = estimateEvtStress(highs, 'upper')
     const bootstrap = bootstrapRangeIntervals(closes, lows, highs)
+    const lowerConservative = candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'conservative')
+    const lowerSafe = candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'safe')
+    const distributionMaximum = lowerSafe.meetsTarget === false
+      ? quantile(lows, 0.05)
+      : lowerSafe.returnPct
     return {
       weeks,
       targetDate: targetWeekClose(input.anchorDate, weeks, !input.intraday && isFinalRegularSessionOfWeek(input.anchorDate)),
       sampleSize: paths.length,
       effectiveSampleSize,
       lower: [
-        candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'conservative'),
-        candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'safe'),
+        lowerConservative,
+        lowerSafe,
       ],
       upper: [
         candidateForThreshold(input.anchorPrice, 'upper', paths, effectiveSampleSize, weeks, 'conservative'),
         candidateForThreshold(input.anchorPrice, 'upper', paths, effectiveSampleSize, weeks, 'safe'),
       ],
+      downsideDistribution: buildDownsideDistribution(paths, distributionMaximum),
       empirical: { closeLowPct: quantile(closes, 0.01), closeHighPct: quantile(closes, 0.99), pathLowPct: quantile(lows, 0.01), pathHighPct: quantile(highs, 0.99), closeMinPct: closes.length ? Math.min(...closes) : Number.NaN, closeMaxPct: closes.length ? Math.max(...closes) : Number.NaN, pathMinPct: lows.length ? Math.min(...lows) : Number.NaN, pathMaxPct: highs.length ? Math.max(...highs) : Number.NaN },
       bootstrap,
       evt: { lowerStressPct: lowerEvt.stressPct, upperStressPct: upperEvt.stressPct, lowerDiagnostics: lowerEvt.diagnostics, upperDiagnostics: upperEvt.diagnostics, note: 'EVT is a separate tail stress estimate, not a probability grade.' },

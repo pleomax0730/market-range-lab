@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { candidateForThreshold, classifyRisk, evaluateCandidate, quantile, wilsonUpper } from './statistics'
+import { buildDownsideDistribution, candidateForThreshold, classifyRisk, evaluateCandidate, quantile, wilsonUpper } from './statistics'
 
 describe('statistics primitives', () => {
   it('interpolates quantiles', () => expect(quantile([0, 10, 20, 30], 0.25)).toBe(7.5))
@@ -16,6 +16,20 @@ describe('statistics primitives', () => {
     expect(result.price).toBe(87.35)
     expect(result.expirationBreach).toBe(0)
     expect(result.pathTouch).toBe(1)
+  })
+
+  it('builds a monotonic downside ECDF without repeating bootstrap work', () => {
+    const paths = [
+      { closeReturn: -0.3, lowReturn: -0.4, highReturn: 0.1 },
+      { closeReturn: -0.2, lowReturn: -0.3, highReturn: 0.1 },
+      { closeReturn: 0.1, lowReturn: -0.1, highReturn: 0.2 },
+      { closeReturn: 0.2, lowReturn: 0, highReturn: 0.3 },
+    ]
+    const curve = buildDownsideDistribution(paths, -0.1)
+    expect(curve[0]).toMatchObject({ expirationBreach: 0, pathTouch: 0 })
+    expect(curve.at(-1)).toMatchObject({ expirationBreach: 0.5, pathTouch: 0.75 })
+    expect(curve.every((point, index) => index === 0 || point.expirationBreach >= curve[index - 1].expirationBreach)).toBe(true)
+    expect(curve.every((point, index) => index === 0 || point.pathTouch >= curve[index - 1].pathTouch)).toBe(true)
   })
 
   it('keeps a positive finite-sample upper bound when no events were observed', () => {

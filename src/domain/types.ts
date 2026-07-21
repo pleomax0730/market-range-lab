@@ -57,6 +57,12 @@ export type RiskSide = {
   meetsTarget?: boolean
 }
 
+export type DownsideDistributionPoint = {
+  returnPct: number
+  expirationBreach: number
+  pathTouch: number
+}
+
 export type HorizonAnalysis = {
   weeks: number
   targetDate: string
@@ -64,6 +70,7 @@ export type HorizonAnalysis = {
   effectiveSampleSize: number
   lower: RiskSide[]
   upper: RiskSide[]
+  downsideDistribution: DownsideDistributionPoint[]
   empirical: {
     closeLowPct: number
     closeHighPct: number
