@@ -11,6 +11,7 @@ button, input, select { font: inherit; }
 .risk-safe { color: #1859a9; background: #eaf3ff; }
 .risk-dangerous { color: #b42318; background: #fff0ef; }
 .risk-insufficient, .risk-scenario { color: #5f5f5f; background: #f0f0f0; }
+.tooltip-content { opacity: 1; transform: scale(1); transform-origin: var(--radix-tooltip-content-transform-origin); transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1); @starting-style { opacity: 0; transform: scale(0.97); } }
+.ui-enter { opacity: 1; transform: translateY(0); transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1); @starting-style { opacity: 0; transform: translateY(-4px); } }
 @media (max-width: 767px) { .desktop-detail { display: none !important; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
-
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } .tooltip-content, .ui-enter { transform: none; } }

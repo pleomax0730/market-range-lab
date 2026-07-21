@@ -547,7 +547,7 @@ export function App() {
               )}
             </div>
             {messages.length > 0 && (
-              <div className="mt-3 space-y-1 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B4F00]">
+              <div className="ui-enter mt-3 space-y-1 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B4F00]">
                 {messages.map((message) => (
                   <p key={message}>{message}</p>
                 ))}
@@ -722,7 +722,7 @@ export function App() {
               </section>
 
               {manualOverride && (
-                <section className="panel grid gap-3 p-4 sm:grid-cols-2">
+                <section className="panel ui-enter grid gap-3 p-4 sm:grid-cols-2">
                   <label>
                     <span className="field-label">手動參考交易日（ET）</span>
                     <Input
