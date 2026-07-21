@@ -18,11 +18,41 @@ describe('statistics primitives', () => {
     expect(result.pathTouch).toBe(1)
   })
 
+  it('keeps a positive finite-sample upper bound when no events were observed', () => {
+    const paths = Array.from({ length: 500 }, () => ({ closeReturn: 0.05, lowReturn: -0.05, highReturn: 0.1 }))
+    const result = evaluateCandidate(100, 50, 'lower', paths, 500, 1)
+    expect(result.expirationBreach).toBe(0)
+    expect(result.expirationUpper95).toBeCloseTo(wilsonUpper(0, 500))
+    expect(result.expirationLower95).toBe(0)
+    expect(result.expirationUpper95).toBeGreaterThan(0.005)
+    expect(result.grade).not.toBe('conservative')
+  })
+
   it('finds the closest passing boundary rather than the most extreme observation', () => {
     const paths = Array.from({ length: 500 }, (_, index) => ({ closeReturn: index < 5 ? -0.2 : -0.02, lowReturn: index < 10 ? -0.25 : -0.04, highReturn: index < 10 ? 0.3 : 0.05 }))
     const lower = candidateForThreshold(100, 'lower', paths, 500, 1, 'safe')
     const upper = candidateForThreshold(100, 'upper', paths, 500, 1, 'safe')
     expect(lower.returnPct).toBeGreaterThan(-0.3)
     expect(upper.returnPct).toBeLessThan(0.31)
+  })
+
+
+  it('searches the nearest passing price at cent precision across large event gaps', () => {
+    const paths = Array.from({ length: 1_000 }, (_, index) => ({
+      closeReturn: index < 5 ? -0.25 : -0.04,
+      lowReturn: index < 10 ? -0.25 : -0.04,
+      highReturn: index < 10 ? 0.25 : 0.04,
+    }))
+    const lower = candidateForThreshold(100, 'lower', paths, 1_000, 1, 'safe')
+    const upper = candidateForThreshold(100, 'upper', paths, 1_000, 1, 'safe')
+    expect(lower.price).toBe(95.99)
+    expect(upper.price).toBe(104.01)
+  })
+
+  it('reports when finite evidence cannot support the requested grade at any price', () => {
+    const paths = Array.from({ length: 500 }, () => ({ closeReturn: 0.05, lowReturn: -0.05, highReturn: 0.1 }))
+    const result = candidateForThreshold(100, 'lower', paths, 500, 1, 'conservative')
+    expect(result.meetsTarget).toBe(false)
+    expect(result.requestedGrade).toBe('conservative')
   })
 })

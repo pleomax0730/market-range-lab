@@ -7,6 +7,8 @@ const base = {
   sourceUrl: 'https://www.investing.com/etfs/direxion-dly-semiconductor-bull-3x-historical-data',
   importedAt: '2026-07-21T00:00:00.000Z',
   splitAdjustedConfirmed: true,
+  discontinuitiesConfirmed: false,
+  interval: 'daily' as const,
 }
 
 describe('importHistoryCsv', () => {
@@ -29,10 +31,14 @@ describe('importHistoryCsv', () => {
     )
   })
 
-  it('warns on a suspected split jump', async () => {
+  it('blocks a suspected split jump until that discontinuity is explicitly confirmed', async () => {
     const csv = `Date,Price,Open,High,Low\n07/16/2026,100,100,102,98\n07/17/2026,20,20,21,19`
     const result = await importHistoryCsv(csv, base)
     expect(result.warnings.some((warning) => warning.code === 'SUSPECTED_SPLIT')).toBe(true)
+    expect(result.errors.some((error) => error.code === 'SUSPECTED_SPLIT_CONFIRMATION_REQUIRED')).toBe(true)
+    expect(result.dataset).toBeUndefined()
+    const confirmed = await importHistoryCsv(csv, { ...base, discontinuitiesConfirmed: true })
+    expect(confirmed.dataset?.bars).toHaveLength(2)
   })
 
   it('excludes Investing.com non-session corporate-action markers', async () => {
@@ -46,5 +52,17 @@ describe('importHistoryCsv', () => {
     const csv = `Date,Price,Open,High,Low\n07/17/2026,135,130,137,128`
     const result = await importHistoryCsv(csv, { ...base, splitAdjustedConfirmed: false })
     expect(result.errors[0].code).toBe('SPLIT_CONFIRMATION_REQUIRED')
+  })
+
+  it('rejects a header-only daily file', async () => {
+    const result = await importHistoryCsv('Date,Price,Open,High,Low', base)
+    expect(result.errors[0].code).toBe('NO_DATA')
+    expect(result.dataset).toBeUndefined()
+  })
+
+  it('rejects a non-session row that is not a corporate-action marker', async () => {
+    const csv = `Date,Price,Open,High,Low,Vol.\n07/04/2026,100,99,101,98,1M`
+    const result = await importHistoryCsv(csv, base)
+    expect(result.errors.some((error) => error.code === 'NON_SESSION_ROW')).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 import Papa from 'papaparse'
 import { z } from 'zod'
 import { isRegularSession } from './market-calendar'
+import { MODEL_VERSION } from './model'
 import type { HistoryDataset, ImportIssue, ImportResult, PriceBar } from './types'
 
 type ImportOptions = Omit<HistoryDataset, 'id' | 'sha256' | 'bars'>
@@ -11,6 +12,8 @@ const optionsSchema = z.object({
   sourceUrl: z.string().url(),
   importedAt: z.string().datetime(),
   splitAdjustedConfirmed: z.boolean(),
+  discontinuitiesConfirmed: z.boolean(),
+  interval: z.enum(['daily', 'weekly']),
 })
 
 const aliases = {
@@ -20,6 +23,7 @@ const aliases = {
   high: ['high'],
   low: ['low'],
   volume: ['vol.', 'volume', 'vol'],
+  change: ['change %', 'change', 'change%'],
 } as const
 
 function normalized(value: string) {
@@ -79,6 +83,7 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
   const bars: PriceBar[] = []
   const seenDates = new Set<string>()
   let corporateActionMarkers = 0
+  const reportedChanges = new Map<string, number>()
   result.data.forEach((row, index) => {
     const line = index + 2
     const date = parseDate(row[columns.date!])
@@ -87,12 +92,17 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
     const low = parseNumber(row[columns.low!])
     const close = parseNumber(row[columns.close!])
     const volume = columns.volume ? parseNumber(row[columns.volume]) : undefined
+    const reportedChange = columns.change ? parseNumber(row[columns.change]?.replace('%', '')) : undefined
     if (!date || [open, high, low, close].some((value) => value === undefined || value <= 0)) {
       errors.push({ code: 'INVALID_ROW', message: 'Date and OHLC must be valid positive values.', row: line })
       return
     }
-    if (!isRegularSession(date) && volume === undefined && open === high && high === low && low === close) {
+    if (parsedOptions.data.interval === 'daily' && !isRegularSession(date) && volume === undefined && open === high && high === low && low === close) {
       corporateActionMarkers += 1
+      return
+    }
+    if (parsedOptions.data.interval === 'daily' && !isRegularSession(date)) {
+      errors.push({ code: 'NON_SESSION_ROW', message: `${date} is not a regular US equity session.`, row: line })
       return
     }
     if (seenDates.has(date)) errors.push({ code: 'DUPLICATE_DATE', message: `Duplicate date ${date}.`, row: line })
@@ -101,17 +111,27 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
       errors.push({ code: 'INVALID_OHLC', message: `OHLC invariant failed for ${date}.`, row: line })
     }
     bars.push({ date, open: open!, high: high!, low: low!, close: close!, ...(volume === undefined ? {} : { volume }) })
+    if (reportedChange !== undefined) reportedChanges.set(date, reportedChange / 100)
   })
   bars.sort((a, b) => a.date.localeCompare(b.date))
   if (corporateActionMarkers > 0) warnings.push({ code: 'CORPORATE_ACTION_MARKERS', message: `Excluded ${corporateActionMarkers} non-session corporate-action marker rows from the price history.` })
+  let suspectedDiscontinuity = false
   for (let index = 1; index < bars.length; index += 1) {
     const ratio = bars[index].close / bars[index - 1].close
-    if (ratio < 0.35 || ratio > 2.85) warnings.push({ code: 'SUSPECTED_SPLIT', message: `Large price discontinuity near ${bars[index].date}; confirm a consistent split-adjusted basis.` })
+    if (ratio < 0.35 || ratio > 2.85) {
+      suspectedDiscontinuity = true
+      warnings.push({ code: 'SUSPECTED_SPLIT', message: `Large price discontinuity near ${bars[index].date}; confirm a consistent split-adjusted basis.` })
+    }
+    const reported = reportedChanges.get(bars[index].date)
+    const recomputed = ratio - 1
+    if (reported !== undefined && Math.abs(reported - recomputed) > 0.005) warnings.push({ code: 'CHANGE_DISCREPANCY', message: `Reported Change % differs from recomputed close return near ${bars[index].date}.` })
   }
+  if (!bars.length) errors.push({ code: 'NO_DATA', message: 'The file contains no accepted price rows.' })
+  if (suspectedDiscontinuity && !parsedOptions.data.discontinuitiesConfirmed) errors.push({ code: 'SUSPECTED_SPLIT_CONFIRMATION_REQUIRED', message: 'Review and explicitly confirm the detected price discontinuity before import.' })
   if (bars.length < 100) warnings.push({ code: 'SMALL_SAMPLE', message: 'Fewer than 100 daily observations; decision grades may be unavailable.' })
   if (errors.length) return { errors, warnings }
 
   const hash = await sha256(csv)
-  const dataset: HistoryDataset = { ...parsedOptions.data, id: `${parsedOptions.data.symbol}-${hash.slice(0, 12)}`, sha256: hash, bars }
+  const dataset: HistoryDataset = { ...parsedOptions.data, id: `${parsedOptions.data.symbol}-${hash.slice(0, 12)}`, sha256: hash, modelVersion: MODEL_VERSION, quality: { acceptedRows: bars.length, rejectedRows: corporateActionMarkers, warnings }, bars }
   return { dataset, errors, warnings }
 }

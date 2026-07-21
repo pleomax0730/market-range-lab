@@ -83,3 +83,9 @@ export function previousRegularSession(anchorDate: string) {
   while (!isRegularSession(format(candidate, 'yyyy-MM-dd'))) candidate = addDays(candidate, -1)
   return format(candidate, 'yyyy-MM-dd')
 }
+
+export function previousOrSameRegularSession(anchorDate: string) {
+  let candidate = parseISO(anchorDate)
+  while (!isRegularSession(format(candidate, 'yyyy-MM-dd'))) candidate = addDays(candidate, -1)
+  return format(candidate, 'yyyy-MM-dd')
+}
