@@ -1,0 +1,3 @@
+# Keep the first version focused on price ranges
+
+The first version evaluates continuous downside and upside Candidate Prices and does not round them to option strikes. It excludes option chains, premiums, Greeks, trade quantities, broker margin, liquidation forecasts, order entry, and broker integrations. The optional account overlay applies only to put assignment, calculates Available Assignment Budget as cash times the configured multiple minus existing obligation, ignores premium conservatively, and may check whole-contract feasibility internally without recommending a quantity; upside call analysis remains statistical only.

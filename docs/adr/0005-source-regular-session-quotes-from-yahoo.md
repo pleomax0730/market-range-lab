@@ -1,0 +1,3 @@
+# Source regular-session quotes from Yahoo through a local proxy
+
+The local first version obtains Yahoo Finance regular-session prices through a server-side proxy, refreshes them every 30 seconds while the market is open, and uses the final regular close outside market hours. Pre-market, after-hours, and BOATS overnight prices are excluded; automatic analysis pauses when an open-session quote is over two minutes old, with a clearly identified manual-price fallback. Direct browser requests and HTML scraping are rejected because of CORS, ambiguous simultaneous session prices, and Yahoo's unofficial endpoint stability.

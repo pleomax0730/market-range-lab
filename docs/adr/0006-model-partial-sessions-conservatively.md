@@ -1,0 +1,3 @@
+# Model partial trading sessions conservatively
+
+During an open regular session, analysis uses the latest Regular-Session Quote but models the unfinished portion of that day as one complete historical trading session and labels the result an Intraday Conservative Preview. Historical Open-to-High, Open-to-Low, and Open-to-Close returns are applied from the current quote so today's already-realized overnight gap is not counted again. After the close it becomes a Closed-Session Analysis using the final close; this deliberate overestimate avoids understating same-day risk while canonical history remains daily, and may be superseded when intraday historical data is introduced.
