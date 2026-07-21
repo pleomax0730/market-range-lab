@@ -58,6 +58,15 @@ function parseDate(value: unknown): string | undefined {
   return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`
 }
 
+function vendorRowFingerprint(open: number | undefined, close: number | undefined, volume: number | undefined) {
+  if (open === undefined || close === undefined || volume === undefined) return undefined
+  return `${open}|${close}|${volume}`
+}
+
+function datesWithinDays(left: string, right: string, days: number) {
+  return Math.abs(Date.parse(`${left}T00:00:00Z`) - Date.parse(`${right}T00:00:00Z`)) <= days * 86_400_000
+}
+
 async function sha256(text: string) {
   const bytes = new TextEncoder().encode(text)
   const digest = await crypto.subtle.digest('SHA-256', bytes)
@@ -82,8 +91,22 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
 
   const bars: PriceBar[] = []
   const seenDates = new Set<string>()
-  let corporateActionMarkers = 0
+  let excludedNonSessionArtifacts = 0
   const reportedChanges = new Map<string, number>()
+  const regularRowsByFingerprint = new Map<string, string[]>()
+  if (parsedOptions.data.interval === 'daily') {
+    result.data.forEach((row) => {
+      const date = parseDate(row[columns.date!])
+      if (!date || !isRegularSession(date)) return
+      const fingerprint = vendorRowFingerprint(
+        parseNumber(row[columns.open!]),
+        parseNumber(row[columns.close!]),
+        columns.volume ? parseNumber(row[columns.volume]) : undefined,
+      )
+      if (!fingerprint) return
+      regularRowsByFingerprint.set(fingerprint, [...(regularRowsByFingerprint.get(fingerprint) ?? []), date])
+    })
+  }
   result.data.forEach((row, index) => {
     const line = index + 2
     const date = parseDate(row[columns.date!])
@@ -97,9 +120,17 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
       errors.push({ code: 'INVALID_ROW', message: 'Date and OHLC must be valid positive values.', row: line })
       return
     }
-    if (parsedOptions.data.interval === 'daily' && !isRegularSession(date) && volume === undefined && open === high && high === low && low === close) {
-      corporateActionMarkers += 1
-      return
+    if (parsedOptions.data.interval === 'daily' && !isRegularSession(date)) {
+      const fingerprint = vendorRowFingerprint(open, close, volume)
+      const duplicatesNearbySession = fingerprint
+        ? (regularRowsByFingerprint.get(fingerprint) ?? []).some((sessionDate) => datesWithinDays(date, sessionDate, 4))
+        : false
+      const isFlatCorporateActionMarker = volume === undefined && open === high && high === low && low === close
+      const hasExtremeReportedChange = reportedChange !== undefined && Math.abs(reportedChange) >= 100
+      if (isFlatCorporateActionMarker || hasExtremeReportedChange || duplicatesNearbySession) {
+        excludedNonSessionArtifacts += 1
+        return
+      }
     }
     if (parsedOptions.data.interval === 'daily' && !isRegularSession(date)) {
       errors.push({ code: 'NON_SESSION_ROW', message: `${date} is not a regular US equity session.`, row: line })
@@ -114,8 +145,9 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
     if (reportedChange !== undefined) reportedChanges.set(date, reportedChange / 100)
   })
   bars.sort((a, b) => a.date.localeCompare(b.date))
-  if (corporateActionMarkers > 0) warnings.push({ code: 'CORPORATE_ACTION_MARKERS', message: `Excluded ${corporateActionMarkers} non-session corporate-action marker rows from the price history.` })
+  if (excludedNonSessionArtifacts > 0) warnings.push({ code: 'CORPORATE_ACTION_MARKERS', message: `Excluded ${excludedNonSessionArtifacts} non-session vendor or corporate-action artifact rows from the price history.` })
   let suspectedDiscontinuity = false
+  const changeDiscrepancyDates: string[] = []
   for (let index = 1; index < bars.length; index += 1) {
     const ratio = bars[index].close / bars[index - 1].close
     if (ratio < 0.35 || ratio > 2.85) {
@@ -124,7 +156,13 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
     }
     const reported = reportedChanges.get(bars[index].date)
     const recomputed = ratio - 1
-    if (reported !== undefined && Math.abs(reported - recomputed) > 0.005) warnings.push({ code: 'CHANGE_DISCREPANCY', message: `Reported Change % differs from recomputed close return near ${bars[index].date}.` })
+    if (reported !== undefined && Math.abs(reported - recomputed) > 0.005) changeDiscrepancyDates.push(bars[index].date)
+  }
+  if (changeDiscrepancyDates.length > 0) {
+    const first = changeDiscrepancyDates[0]
+    const last = changeDiscrepancyDates.at(-1)!
+    const dateRange = first === last ? first : `${first} to ${last}`
+    warnings.push({ code: 'CHANGE_DISCREPANCY', message: `Reported Change % differs from OHLC-recomputed close returns for ${changeDiscrepancyDates.length} sessions (${dateRange}); OHLC-derived returns remain authoritative.` })
   }
   if (!bars.length) errors.push({ code: 'NO_DATA', message: 'The file contains no accepted price rows.' })
   if (suspectedDiscontinuity && !parsedOptions.data.discontinuitiesConfirmed) errors.push({ code: 'SUSPECTED_SPLIT_CONFIRMATION_REQUIRED', message: 'Review and explicitly confirm the detected price discontinuity before import.' })
@@ -132,6 +170,6 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
   if (errors.length) return { errors, warnings }
 
   const hash = await sha256(csv)
-  const dataset: HistoryDataset = { ...parsedOptions.data, id: `${parsedOptions.data.symbol}-${hash.slice(0, 12)}`, sha256: hash, modelVersion: MODEL_VERSION, quality: { acceptedRows: bars.length, rejectedRows: corporateActionMarkers, warnings }, bars }
+  const dataset: HistoryDataset = { ...parsedOptions.data, id: `${parsedOptions.data.symbol}-${hash.slice(0, 12)}`, sha256: hash, modelVersion: MODEL_VERSION, quality: { acceptedRows: bars.length, rejectedRows: excludedNonSessionArtifacts, warnings }, bars }
   return { dataset, errors, warnings }
 }
