@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { analyzeHistory, extractMatchedPaths } from "./domain/analyze";
+import { extractMatchedPaths } from "./domain/analyze";
 import { assignmentOverlay } from "./domain/assignment";
 import { importHistoryCsv } from "./domain/import-history";
 import { evaluateCandidate } from "./domain/statistics";
@@ -20,6 +20,8 @@ import {
 import { reconcileWeekly } from "./domain/reconcile-weekly";
 import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
 import { applyGradePause } from "./domain/export-analysis";
+import { useHistoricalAnalysis } from "./hooks/use-historical-analysis";
+import { TermHelp } from "./components/term-help";
 import type {
   HistoryDataset,
   HorizonAnalysis,
@@ -234,18 +236,11 @@ export function App() {
   const analysisIntraday = manualOverride
     ? manualSession === "intraday"
     : intraday;
-  const analyses = useMemo(
-    () =>
-      active && anchorPrice > 0
-        ? analyzeHistory({
-            bars: active.bars,
-            anchorPrice,
-            anchorDate,
-            intraday: analysisIntraday,
-          })
-        : [],
+  const analysisInput = useMemo(
+    () => active && anchorPrice > 0 ? { bars: active.bars, anchorPrice, anchorDate, intraday: analysisIntraday } : undefined,
     [active, anchorPrice, anchorDate, analysisIntraday],
   );
+  const { analyses, loading: analysisLoading, error: analysisError } = useHistoricalAnalysis(analysisInput);
   const selected = analyses[horizon - 1];
   const putPrice =
     candidateSide === "lower" && Number(candidate) > 0
@@ -762,7 +757,7 @@ export function App() {
               <section className="panel p-4">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-sm font-bold">目標週收盤區間</h2>
+                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">目標週收盤區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin" />統計更新中</span>}</div>
                     <p className="mt-1 text-xs text-[#6B7280]">
                       {analysisIntraday
                         ? "Intraday Conservative Preview：以當前價為錨，沿用歷史 Open→High/Low/Close 全時段路徑。"
@@ -774,6 +769,7 @@ export function App() {
                         {previousRegularSession(anchorDate)}，分級已暫停。
                       </p>
                     )}
+                    {analysisError && <p className="mt-1 text-xs font-semibold text-red-700">{analysisError}</p>}
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {analyses.map((item) => (
@@ -978,8 +974,8 @@ function RiskTable({
             <th className="px-3 py-2.5">分級</th>
             <th className="px-3 py-2.5 text-right">價格</th>
             <th className="px-3 py-2.5 text-right">幅度</th>
-            <th className="px-3 py-2.5 text-right">到期估計 / 95% CI</th>
-            <th className="px-3 py-2.5 text-right">觸及估計 / 95% CI</th>
+            <th className="px-3 py-2.5 text-right"><TermHelp explanation="Expiration breach estimate / 95% confidence interval：估計週收盤穿越該價格的機率，中括號是考慮有限歷史樣本後的 95% 信賴區間。">到期估計 / 95% CI</TermHelp></th>
+            <th className="px-3 py-2.5 text-right"><TermHelp explanation="Path-touch estimate / 95% confidence interval：不只看週收盤，而是統計期間內盤中曾觸及該價格的機率。">觸及估計 / 95% CI</TermHelp></th>
           </tr>
         </thead>
         <tbody>
@@ -1036,19 +1032,19 @@ function RiskTable({
           <strong>{analysis.targetDate}</strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]">N / N_eff</span>
+          <span className="block text-[#6B7280]"><TermHelp explanation="N 是符合目前星期位置與期間的歷史路徑數；N_eff 是再考慮路徑重疊與序列自相關後的有效獨立樣本數。">N / N_eff</TermHelp></span>
           <strong className="num">
             {analysis.sampleSize} / {analysis.effectiveSampleSize}
           </strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]">歷史路徑 1%</span>
+          <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 1st percentile：約只有 1% 的同類歷史路徑曾出現更深的盤中跌幅。這是經驗分位數，不是保證。">歷史路徑 1%</TermHelp></span>
           <strong className="num">
             {percent.format(analysis.empirical.pathLowPct)}
           </strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]">歷史路徑 99%</span>
+          <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 99th percentile：約只有 1% 的同類歷史路徑曾出現更高的盤中漲幅。這是經驗分位數，不是保證。">歷史路徑 99%</TermHelp></span>
           <strong className="num">
             {percent.format(analysis.empirical.pathHighPct)}
           </strong>
@@ -1077,7 +1073,7 @@ function RiskTable({
           </strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]">EVT stress</span>
+          <span className="block text-[#6B7280]"><TermHelp explanation="Extreme Value Theory stress：只有尾部擬合通過穩定性與適合度檢查才顯示。它是壓力情境，不參與保守／安全分級。">EVT stress</TermHelp></span>
           <strong className="num">
             {analysis.evt.lowerStressPct === undefined
               ? "不可用"
@@ -1143,7 +1139,7 @@ function CandidateResult({
         </strong>
       </div>
       <div>
-        <span className="field-label">到期估計 / 95% CI</span>
+        <span className="field-label"><TermHelp explanation="到期估計是目標週收盤穿越候選價的歷史比例；95% CI 反映有限樣本造成的不確定性。">到期估計 / 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.expirationBreach)} / [
           {percent.format(result.expirationLower95)},{" "}
@@ -1155,7 +1151,7 @@ function CandidateResult({
         </small>
       </div>
       <div>
-        <span className="field-label">盤中觸及估計 / 95% CI</span>
+        <span className="field-label"><TermHelp explanation="盤中觸及會檢查整條價格路徑的最高或最低點，因此通常高於只看週收盤的到期穿越機率。">盤中觸及估計 / 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.pathTouch)} / [
           {percent.format(result.pathTouchLower95)},{" "}
