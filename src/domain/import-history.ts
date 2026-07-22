@@ -4,7 +4,7 @@ import { isRegularSession } from './market-calendar'
 import { MODEL_VERSION } from './model'
 import type { HistoryDataset, ImportIssue, ImportResult, PriceBar } from './types'
 
-type ImportOptions = Omit<HistoryDataset, 'id' | 'sha256' | 'bars'>
+export type HistoryImportOptions = Omit<HistoryDataset, 'id' | 'sha256' | 'bars'>
 
 const optionsSchema = z.object({
   symbol: z.string().trim().regex(/^[A-Z][A-Z0-9.-]{0,9}$/),
@@ -73,7 +73,7 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): Promise<ImportResult> {
+export async function importHistoryCsv(csv: string, rawOptions: HistoryImportOptions): Promise<ImportResult> {
   const errors: ImportIssue[] = []
   const warnings: ImportIssue[] = []
   const parsedOptions = optionsSchema.safeParse(rawOptions)
@@ -166,7 +166,10 @@ export async function importHistoryCsv(csv: string, rawOptions: ImportOptions): 
   }
   if (!bars.length) errors.push({ code: 'NO_DATA', message: 'The file contains no accepted price rows.' })
   if (suspectedDiscontinuity && !parsedOptions.data.discontinuitiesConfirmed) errors.push({ code: 'SUSPECTED_SPLIT_CONFIRMATION_REQUIRED', message: 'Review and explicitly confirm the detected price discontinuity before import.' })
-  if (bars.length < 100) warnings.push({ code: 'SMALL_SAMPLE', message: 'Fewer than 100 daily observations; decision grades may be unavailable.' })
+  if (bars.length < 100) warnings.push({
+    code: 'SMALL_SAMPLE',
+    message: `Fewer than 100 ${parsedOptions.data.interval} observations; decision grades may be unavailable.`,
+  })
   if (errors.length) return { errors, warnings }
 
   const hash = await sha256(csv)

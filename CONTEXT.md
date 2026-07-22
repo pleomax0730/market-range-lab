@@ -20,24 +20,32 @@ _Avoid_: Seven-day window, five-row assumption
 The regular-session close of the final trading day in a selected Trading Week. It is normally Friday's close and moves to Thursday or another preceding session when Friday is closed.
 _Avoid_: Target Friday, calendar-week end
 
-**Canonical Daily History**:
-Daily OHLC price observations for one market symbol that serve as the authoritative source for all return, path, and derived weekly calculations. Every OHLC field uses the same split-adjusted price basis and excludes reinvested distributions.
-_Avoid_: Weekly source of truth, option chain, live quote
+**Canonical Price History**:
+The one active, split-adjusted OHLC dataset used for a symbol's calculations. Daily History is preferred; Weekly-Only History is an explicit lower-resolution fallback when Daily History is unavailable.
+_Avoid_: Simultaneous calculation sources, option chain, live quote
+
+**Daily History**:
+Daily OHLC observations that preserve session-level path detail and support weekday-position-matched analysis.
+_Avoid_: Weekly approximation
+
+**Weekly-Only History**:
+Uploaded weekly OHLC observations used as the Canonical Price History when no Daily History is available. It supports sequential weekly close and within-week High/Low analysis but cannot reconstruct daily order.
+_Avoid_: Daily precision, reconciliation-only file
 
 **Split-Adjusted Price**:
 A historical price restated so stock splits do not appear as market returns, with the same adjustment factor applied consistently to Open, High, Low, and Close.
 _Avoid_: Total-return price, adjusted Close paired with unadjusted OHLC
 
 **Derived Weekly History**:
-Weekly OHLC observations aggregated by the system from Canonical Daily History.
+Weekly OHLC observations aggregated by the system from Daily History.
 _Avoid_: Uploaded weekly history
 
 **Weekly Reconciliation Dataset**:
-An optional uploaded weekly OHLC file used only to detect discrepancies against Derived Weekly History.
-_Avoid_: Weekly source of truth
+An uploaded weekly OHLC file compared with Daily History when both are available. The same file may instead become Weekly-Only History when selected as the Active dataset.
+_Avoid_: Hidden secondary calculation source
 
 **Full-History Baseline**:
-All valid observations in Canonical Daily History, from its earliest available session through its latest completed session, used as the sole historical analysis window.
+All valid observations in the active Canonical Price History, from its earliest available period through its latest completed period, used as the sole historical analysis window.
 _Avoid_: Recent regime, rolling lookback
 
 **Equal-Weight Historical Path**:
@@ -47,6 +55,10 @@ _Avoid_: Recency weight, regime weight
 **Week-Position-Matched Path**:
 An eligible historical path that begins at the same weekday position as the analysis reference and ends at the corresponding Target Week Close for the selected horizon.
 _Avoid_: Arbitrary trading-session window
+
+**Contiguous Weekly Path**:
+An eligible Weekly-Only History path that starts from a weekly Open or Close, advances through consecutive weekly bars for the selected horizon, and uses their High/Low values for touch evidence.
+_Avoid_: Weekday-matched daily path, bridged missing week
 
 **Empirical Range Estimate**:
 A Statistical Price Range calculated directly from observed Equal-Weight Historical Paths in the Full-History Baseline.

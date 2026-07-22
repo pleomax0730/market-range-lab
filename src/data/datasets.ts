@@ -8,22 +8,40 @@ const database = openDB('market-range-dashboard', 1, {
   },
 })
 
-export async function saveDataset(dataset: HistoryDataset) {
-  return (await database).put('datasets', dataset)
+export async function saveDatasetAndSelect(dataset: HistoryDataset, activeId: string) {
+  const db = await database
+  const transaction = db.transaction(['datasets', 'settings'], 'readwrite')
+  await Promise.all([
+    transaction.objectStore('datasets').put(dataset),
+    transaction.objectStore('settings').put(activeId, 'activeDataset'),
+    transaction.done,
+  ])
 }
 
 export async function listDatasets(): Promise<HistoryDataset[]> {
   return (await database).getAll('datasets')
 }
 
-export async function deleteDataset(id: string) {
-  return (await database).delete('datasets', id)
+export async function deleteDatasetAndSetActive(id: string, activeId: string) {
+  const db = await database
+  const transaction = db.transaction(['datasets', 'settings'], 'readwrite')
+  await Promise.all([
+    transaction.objectStore('datasets').delete(id),
+    activeId
+      ? transaction.objectStore('settings').put(activeId, 'activeDataset')
+      : transaction.objectStore('settings').delete('activeDataset'),
+    transaction.done,
+  ])
 }
 
 export async function clearDatasets() {
   const db = await database
   const transaction = db.transaction(['datasets', 'settings'], 'readwrite')
-  await Promise.all([transaction.objectStore('datasets').clear(), transaction.objectStore('settings').clear(), transaction.done])
+  await Promise.all([
+    transaction.objectStore('datasets').clear(),
+    transaction.objectStore('settings').delete('activeDataset'),
+    transaction.done,
+  ])
 }
 
 export async function setActiveDataset(id: string) {

@@ -11,7 +11,7 @@ The user's current SOXL daily and weekly CSV files were downloaded manually from
 - Available page fields: Date, Price, Open, High, Low, Vol., Change %
 - Import mapping: `Price` is treated as `Close`; `Change %` is not trusted as a calculated return and is used only for reconciliation.
 
-The application does not log in to Investing.com, scrape this page, or download files automatically. The user downloads the CSV and imports it into the local application. Daily history is required and canonical; weekly history is optional and reconciliation-only.
+The application does not log in to Investing.com, scrape this page, or download files automatically. The user downloads the CSV and imports it into the local application. Daily history is preferred; a weekly file can be selected as a clearly labeled lower-resolution analysis source when daily history is unavailable, or compared with a matching daily dataset.
 
 Each imported dataset records this provenance separately from its contents:
 

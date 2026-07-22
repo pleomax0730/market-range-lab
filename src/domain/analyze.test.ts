@@ -35,6 +35,33 @@ describe('extractMatchedPaths', () => {
     expect(extractMatchedPaths(bars, '2026-07-20', 1, false)).toEqual([])
   })
 
+  it('builds sequential close and touch paths from weekly-only OHLC history', () => {
+    const bars = [
+      { date: '2026-06-28', open: 98, high: 102, low: 95, close: 100 },
+      { date: '2026-07-05', open: 99, high: 105, low: 80, close: 90 },
+      { date: '2026-07-12', open: 91, high: 110, low: 85, close: 108 },
+    ]
+
+    const paths = extractMatchedPaths(bars, '2026-07-20', 1, false, 'weekly')
+
+    expect(paths).toHaveLength(2)
+    expect(paths[0].closeReturn).toBeCloseTo(-0.1)
+    expect(paths[0].lowReturn).toBeCloseTo(-0.2)
+    expect(paths[0].highReturn).toBeCloseTo(0.05)
+    expect(paths[1].closeReturn).toBeCloseTo(0.2)
+    expect(paths[1].lowReturn).toBeCloseTo(85 / 90 - 1)
+    expect(paths[1].highReturn).toBeCloseTo(110 / 90 - 1)
+  })
+
+  it('does not bridge a missing weekly observation', () => {
+    const bars = [
+      { date: '2026-06-28', open: 98, high: 102, low: 95, close: 100 },
+      { date: '2026-07-12', open: 91, high: 110, low: 85, close: 108 },
+    ]
+
+    expect(extractMatchedPaths(bars, '2026-07-20', 2, true, 'weekly')).toEqual([])
+  })
+
   it('does not treat perfectly dependent paths as independent evidence', () => {
     const paths = Array.from({ length: 200 }, () => ({ closeReturn: 0.1, lowReturn: -0.1, highReturn: 0.2 }))
     expect(estimateEffectiveSampleSize(paths, 1)).toBe(1)

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Build a local dashboard that imports split-adjusted daily price history for a US-listed stock or ETF, obtains a best-effort current regular-session quote, and estimates downside and upside price ranges through the next one to eight trading-week closes. The product reports historical closing-breach and intraperiod touch probabilities; it does not issue orders or recommend position quantities.
+Build a local dashboard that imports split-adjusted daily or weekly price history for a US-listed stock or ETF, obtains a best-effort current regular-session quote, and estimates downside and upside price ranges through the next one to eight trading-week closes. The product reports historical closing-breach and intraperiod touch probabilities; it does not issue orders or recommend position quantities.
 
 ## Scope
 
@@ -13,8 +13,8 @@ The first version excludes option chains, premiums, Greeks, broker margin, preci
 ## Inputs
 
 - Symbol, entered explicitly and checked against Yahoo metadata.
-- Daily CSV, required and canonical.
-- Weekly CSV, optional and used only to reconcile system-derived weekly bars.
+- Daily CSV, preferred because it preserves session-level paths.
+- Weekly CSV, accepted as a lower-resolution canonical fallback and optionally compared with Daily History.
 - Current regular-session quote from Yahoo, or a visibly identified manual override.
 - Cash balance, Assignment Budget Multiple, and Existing Assignment Obligation.
 - One selected Candidate Price for detailed evaluation, while system-generated range boundaries remain continuous prices.
@@ -32,7 +32,7 @@ The importer supports explicit column mapping, common US date formats, thousands
 
 Duplicate dates, nonpositive OHLC values, non-finite values, `High < max(Open, Close)`, and `Low > min(Open, Close)` are rejected with row-level errors. Suspected split or adjustment discontinuities require explicit confirmation; confirmed mixed-basis OHLC is rejected. Volume is optional.
 
-For a Safety Grade, the daily file must extend through at least the regular session immediately preceding the Reference Price's session. Older files may produce ranges with a stale-history warning but cannot produce a grade. Yahoo data does not backfill missing history.
+For a Safety Grade, Daily History must extend through at least the regular session immediately preceding the Reference Price's session. Weekly-Only History must contain a weekly observation no more than two weeks behind the reference date. Older files may produce ranges with a stale-history warning but cannot produce a grade. Yahoo data does not backfill missing history.
 
 ## Quote Policy
 
@@ -46,17 +46,19 @@ The application uses the US equity calendar and groups daily observations into T
 
 All next one through eight Target Week Closes are calculated together. One through four weeks are Decision-Grade Horizons. Five through eight weeks are Scenario Horizons and always show a low-evidence warning without a Safety Grade.
 
-Historical paths must start at the same weekday position as the current analysis and end at the corresponding Target Week Close. Arbitrary equal-length session windows are excluded because weekend-gap exposure differs.
+Daily historical paths must start at the same weekday position as the current analysis and end at the corresponding Target Week Close. Weekly-Only History instead uses contiguous weekly bars: closed-session analysis starts from one weekly close and measures the next N weekly closes and intervening High/Low values. Missing weeks are not bridged. Weekly-only results are visibly labeled and cannot claim daily path order.
 
 ## Intraday Behavior
 
 During an open session, the current regular-session quote is the Reference Price and the unfinished day is conservatively modeled as one complete session. Historical Open-to-High, Open-to-Low, and Open-to-Close returns are applied from the current quote so today's already-realized overnight gap is not counted twice. The result is labeled `Intraday Conservative Preview`.
 
+Weekly-Only History cannot reconstruct a remaining daily session. During an open session it may show a visibly labeled weekly scenario preview, but Safety Grades are paused until a completed-session reference is available.
+
 After the regular close, the result is a `Closed-Session Analysis` anchored to the completed close.
 
 ## Statistical Model
 
-The sole analysis window is the full validated history. Every eligible, week-position-matched path has equal weight regardless of date.
+The sole analysis window is the full validated active dataset. Every eligible daily week-position-matched path or contiguous weekly path has equal weight regardless of date.
 
 Primary ranges and breach rates are empirical. Contiguous-block bootstrap provides 95% confidence intervals while preserving serial dependence. EVT may provide a separate stress estimate only when fit diagnostics pass; it cannot replace an observed extreme or assign a Safety Grade. Normal-distribution assumptions are not used.
 
@@ -104,7 +106,7 @@ Premium is ignored conservatively. Whole 100-share contract feasibility may be e
 ## Dashboard Workflow
 
 1. Choose or add an Active Symbol.
-2. Import and map the daily CSV; optionally import weekly reconciliation data.
+2. Import a Daily CSV when available, or a Weekly CSV for lower-resolution analysis; optionally compare matching daily and weekly histories.
 3. Review data provenance, quality errors, adjustment warnings, and freshness.
 4. Enter cash, assignment multiple, existing obligation, and optional Candidate Price.
 5. Review the one-to-eight-week summary table.

@@ -8,9 +8,41 @@ export type AnalysisInput = {
   anchorPrice: number
   anchorDate: string
   intraday: boolean
+  interval?: 'daily' | 'weekly'
 }
 
-export function extractMatchedPaths(bars: PriceBar[], anchorDate: string, weeks: number, intraday: boolean): HistoricalPath[] {
+function extractWeeklyMatchedPaths(bars: PriceBar[], weeks: number, intraday: boolean): HistoricalPath[] {
+  const paths: HistoricalPath[] = []
+  bars.forEach((start, startIndex) => {
+    const targetIndex = startIndex + weeks - (intraday ? 1 : 0)
+    const target = bars[targetIndex]
+    if (!target) return
+    const sequence = bars.slice(startIndex, targetIndex + 1)
+    const hasMissingWeek = sequence.slice(1).some((bar, index) => {
+      const days = differenceInCalendarDays(parseISO(bar.date), parseISO(sequence[index].date))
+      return days < 5 || days > 9
+    })
+    if (hasMissingWeek) return
+    const base = intraday ? start.open : start.close
+    const window = bars.slice(intraday ? startIndex : startIndex + 1, targetIndex + 1)
+    if (!window.length || base <= 0) return
+    paths.push({
+      closeReturn: target.close / base - 1,
+      lowReturn: Math.min(...window.map((bar) => bar.low)) / base - 1,
+      highReturn: Math.max(...window.map((bar) => bar.high)) / base - 1,
+    })
+  })
+  return paths
+}
+
+export function extractMatchedPaths(
+  bars: PriceBar[],
+  anchorDate: string,
+  weeks: number,
+  intraday: boolean,
+  interval: 'daily' | 'weekly' = 'daily',
+): HistoricalPath[] {
+  if (interval === 'weekly') return extractWeeklyMatchedPaths(bars, weeks, intraday)
   const anchorWeekday = getDay(parseISO(anchorDate))
   const rollsPastCurrentWeek = !intraday && isFinalRegularSessionOfWeek(anchorDate)
   const indexByDate = new Map(bars.map((bar, index) => [bar.date, index]))
@@ -127,7 +159,7 @@ export function estimateEvtStress(values: number[], side: 'lower' | 'upper'): Ev
 export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
   return Array.from({ length: 8 }, (_, index) => {
     const weeks = index + 1
-    const paths = extractMatchedPaths(input.bars, input.anchorDate, weeks, input.intraday)
+    const paths = extractMatchedPaths(input.bars, input.anchorDate, weeks, input.intraday, input.interval)
     const effectiveSampleSize = estimateEffectiveSampleSize(paths, weeks)
     const closes = paths.map((path) => path.closeReturn)
     const lows = paths.map((path) => path.lowReturn)

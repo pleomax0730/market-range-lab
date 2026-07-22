@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -9,39 +9,30 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { extractMatchedPaths } from "./domain/analyze";
-import { assignmentOverlay } from "./domain/assignment";
-import { importHistoryCsv } from "./domain/import-history";
-import { evaluateCandidate } from "./domain/statistics";
 import {
-  previousOrSameRegularSession,
-  previousRegularSession,
-} from "./domain/market-calendar";
+  serializeAnalysisReport,
+  type CandidateAnalysis,
+} from "./domain/analysis-report";
+import { previousRegularSession } from "./domain/market-calendar";
 import { reconcileWeekly } from "./domain/reconcile-weekly";
-import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
-import { applyGradePause } from "./domain/export-analysis";
-import { useHistoricalAnalysis } from "./hooks/use-historical-analysis";
+import { MODEL_VERSION } from "./domain/model";
+import { useAnalysisReport } from "./hooks/use-analysis-report";
+import { useHistoryCatalog } from "./hooks/use-history-catalog";
+import { useReferencePrice } from "./hooks/use-reference-price";
 import { TermHelp } from "./components/term-help";
 import { DownsideDistributionChart } from "./components/downside-distribution-chart";
 import type {
-  HistoryDataset,
   HorizonAnalysis,
   RiskGrade,
 } from "./domain/types";
 import {
-  clearDatasets,
-  deleteDataset,
-  getActiveDatasetId,
   getDashboardSettings,
-  listDatasets,
   saveDashboardSettings,
-  saveDataset,
-  setActiveDataset,
 } from "./data/datasets";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Tooltip } from "./components/ui/tooltip";
-import { downloadText, rowsToCsv } from "./lib/export";
+import { downloadText } from "./lib/export";
 
 const INVESTING_SOURCE =
   "https://www.investing.com/etfs/direxion-dly-semiconductor-bull-3x-historical-data";
@@ -62,16 +53,6 @@ const gradeText: Record<RiskGrade, string> = {
   scenario: "情境參考",
 };
 
-type Quote = {
-  symbol: string;
-  price: number;
-  quoteTime: string;
-  exchangeTimezone: string;
-  marketOpen: boolean;
-  stale: boolean;
-  source: string;
-};
-
 function formatTime(iso: string, zone: string) {
   return new Intl.DateTimeFormat("zh-TW", {
     timeZone: zone,
@@ -81,18 +62,6 @@ function formatTime(iso: string, zone: string) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(iso));
-}
-
-function dateInZone(value: string | Date, zone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(value));
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((item) => item.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function Grade({ grade }: { grade: RiskGrade }) {
@@ -106,19 +75,14 @@ function Grade({ grade }: { grade: RiskGrade }) {
 }
 
 export function App() {
-  const [datasets, setDatasets] = useState<HistoryDataset[]>([]);
-  const [activeId, setActiveId] = useState("");
-  const [symbol, setSymbol] = useState("SOXL");
-  const [sourceUrl, setSourceUrl] = useState(INVESTING_SOURCE);
+  const historyCatalog = useHistoryCatalog();
+  const { datasets, activeId, active } = historyCatalog;
+  const [importSymbol, setImportSymbol] = useState("SOXL");
+  const [importSourceUrl, setImportSourceUrl] = useState(INVESTING_SOURCE);
   const [confirmed, setConfirmed] = useState(false);
   const [discontinuitiesConfirmed, setDiscontinuitiesConfirmed] =
     useState(false);
   const [messages, setMessages] = useState<string[]>([]);
-  const [quote, setQuote] = useState<Quote>();
-  const [manualPrice, setManualPrice] = useState("135");
-  const [quoteError, setQuoteError] = useState("");
-  const [quotePaused, setQuotePaused] = useState(false);
-  const [clock, setClock] = useState(() => Date.now());
   const [horizon, setHorizon] = useState(1);
   const [candidate, setCandidate] = useState("");
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
@@ -127,29 +91,25 @@ export function App() {
   const [cash, setCash] = useState("60000");
   const [multiple, setMultiple] = useState("1.2");
   const [obligation, setObligation] = useState("75000");
-  const [intraday, setIntraday] = useState(false);
-  const [manualOverride, setManualOverride] = useState(false);
-  const [manualDate, setManualDate] = useState(() =>
-    dateInZone(new Date(), "America/New_York"),
-  );
-  const [manualSession, setManualSession] = useState<"intraday" | "closed">(
-    "closed",
-  );
-  const [manualUpdatedAt, setManualUpdatedAt] = useState<string>();
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const active = datasets.find((dataset) => dataset.id === activeId);
+  const referencePrice = useReferencePrice({
+    symbol: active?.symbol,
+    fallbackPrice: active?.bars.at(-1)?.close,
+    fallbackDate: active?.bars.at(-1)?.date,
+  });
+  const reference = referencePrice.snapshot;
+  const quote = reference.quote;
+  const manualPrice = reference.priceInput;
+  const quoteError = reference.error;
+  const quotePaused = reference.paused;
+  const manualOverride = reference.mode === "manual";
+  const manualDate = reference.manualDate;
+  const manualSession = reference.manualSession;
+  const manualUpdatedAt = reference.manualUpdatedAt;
 
   useEffect(() => {
     void (async () => {
-      const loaded = await listDatasets();
-      const storedActive = await getActiveDatasetId();
       const settings = await getDashboardSettings();
-      setDatasets(loaded);
-      setActiveId(
-        loaded.some((dataset) => dataset.id === storedActive)
-          ? storedActive!
-          : (loaded[0]?.id ?? ""),
-      );
       if (settings) {
         setCash(settings.cash);
         setMultiple(settings.multiple);
@@ -187,261 +147,162 @@ export function App() {
     settingsLoaded,
   ]);
 
-  const refreshQuote = useCallback(
-    async (force = false) => {
-      if (!active || ((manualOverride || quotePaused) && !force)) return;
-      try {
-        setQuoteError("");
-        const response = await fetch(
-          `/api/quote?symbol=${encodeURIComponent(active.symbol)}`,
-        );
-        const value = await response.json();
-        if (!response.ok) throw new Error(value.error);
-        setQuote(value);
-        setManualPrice(String(value.price));
-        setManualOverride(false);
-        setQuotePaused(false);
-        setManualUpdatedAt(undefined);
-        setIntraday(value.marketOpen);
-      } catch (error) {
-        setQuoteError(error instanceof Error ? error.message : "無法取得報價");
-      }
-    },
-    [active, manualOverride, quotePaused],
-  );
-
-  useEffect(() => {
-    if (!active) return;
-    const initial = window.setTimeout(() => void refreshQuote(), 0);
-    return () => {
-      window.clearTimeout(initial);
-    };
-  }, [active, refreshQuote]);
-
-  useEffect(() => {
-    if (!active || quotePaused || manualOverride || !quote?.marketOpen) return;
-    const timer = window.setInterval(() => void refreshQuote(), 30_000);
-    return () => window.clearInterval(timer);
-  }, [active, manualOverride, quote?.marketOpen, quotePaused, refreshQuote]);
-
-  useEffect(() => {
-    if (!quote?.marketOpen) return;
-    const timer = window.setInterval(() => setClock(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, [quote?.marketOpen]);
-
-  const anchorPrice = Number(manualPrice);
-  const anchorDate = manualOverride
-    ? previousOrSameRegularSession(manualDate)
-    : dateInZone(quote?.quoteTime ?? new Date(), "America/New_York");
-  const analysisIntraday = manualOverride
-    ? manualSession === "intraday"
-    : intraday;
-  const analysisInput = useMemo(
-    () => active && anchorPrice > 0 ? { bars: active.bars, anchorPrice, anchorDate, intraday: analysisIntraday } : undefined,
-    [active, anchorPrice, anchorDate, analysisIntraday],
-  );
-  const { analyses, loading: analysisLoading, error: analysisError } = useHistoricalAnalysis(analysisInput);
-  const selected = analyses[horizon - 1];
-  const putPrice =
-    candidateSide === "lower" && Number(candidate) > 0
-      ? Number(candidate)
-      : Number(selected?.lower[1]?.price || 0);
-  const overlay = assignmentOverlay(
-    Number(cash),
-    Number(multiple),
-    Number(obligation),
-    putPrice,
-  );
-  const quoteAgeStale = Boolean(
-    quote?.marketOpen && clock - new Date(quote.quoteTime).getTime() > 120_000,
-  );
-  const staleGrade = Boolean(
-    !manualOverride && (quoteError || !quote || quote.stale || quoteAgeStale),
-  );
+  const anchorPrice = reference.price;
+  const anchorDate = reference.anchorDate;
+  const analysisIntraday = reference.intraday;
+  const staleGrade = reference.stale;
   const historyStale = Boolean(
     active &&
-      (active.bars.at(-1)?.date ?? "") < previousRegularSession(anchorDate),
+      (active.interval === "daily"
+        ? (active.bars.at(-1)?.date ?? "") < previousRegularSession(anchorDate)
+        : Date.parse(`${anchorDate}T00:00:00Z`) -
+            Date.parse(`${active.bars.at(-1)?.date ?? ""}T00:00:00Z`) >
+          14 * 86_400_000),
   );
-  const gradePaused = staleGrade || historyStale;
-
-  async function handleFile(file?: File) {
-    if (!file) return;
-    const result = await importHistoryCsv(await file.text(), {
-      symbol: symbol.toUpperCase(),
-      filename: file.name,
-      sourceUrl,
-      importedAt: new Date().toISOString(),
-      splitAdjustedConfirmed: confirmed,
-      discontinuitiesConfirmed,
-      interval: "daily",
-    });
-    setMessages([
-      ...result.errors.map((item) => `錯誤：${item.message}`),
-      ...result.warnings.map((item) => `提醒：${item.message}`),
-    ]);
-    if (!result.dataset) return;
-    await saveDataset(result.dataset);
-    await setActiveDataset(result.dataset.id);
-    setDatasets(await listDatasets());
-    setActiveId(result.dataset.id);
-  }
-
-  async function handleWeeklyFile(file?: File) {
-    if (!file || !active) return;
-    const result = await importHistoryCsv(await file.text(), {
-      symbol: active.symbol,
-      filename: file.name,
-      sourceUrl,
-      importedAt: new Date().toISOString(),
-      splitAdjustedConfirmed: confirmed,
-      discontinuitiesConfirmed,
-      interval: "weekly",
-    });
-    if (!result.dataset) {
-      setMessages(result.errors.map((item) => `Weekly 錯誤：${item.message}`));
-      return;
-    }
-    const reconciliation = reconcileWeekly(active.bars, result.dataset.bars);
-    setMessages([
-      `Weekly reconciliation：${reconciliation.comparisons.length} 個可比較週收盤，${reconciliation.mismatchCount} 個差異超過 0.5%。Weekly 不影響分析。`,
-    ]);
-  }
-
-  function exportResults(kind: "json" | "csv") {
-    if (!active) return;
-    const base = `${active.symbol}-range-analysis-${anchorDate}`;
-    const pauseReasons = [
+  const weeklyIntraday = active?.interval === "weekly" && analysisIntraday;
+  const gradePaused = staleGrade || historyStale || weeklyIntraday;
+  const pauseReasons = useMemo(
+    () => [
       ...(historyStale ? ["stale-history"] : []),
       ...(staleGrade ? ["stale-or-missing-quote"] : []),
-    ];
-    const exportedAnalyses = applyGradePause(analyses, gradePaused);
-    const candidatePaths =
-      selected && Number(candidate) > 0
-        ? extractMatchedPaths(
-            active.bars,
-            anchorDate,
-            selected.weeks,
-            analysisIntraday,
-          )
-        : [];
-    const candidateEvaluation =
-      selected && Number(candidate) > 0
-        ? evaluateCandidate(
-            anchorPrice,
-            Number(candidate),
-            candidateSide,
-            candidatePaths,
-            selected.effectiveSampleSize,
-            selected.weeks,
-          )
-        : undefined;
-    const provenance = {
-      modelVersion: MODEL_VERSION,
-      thresholds: GRADE_THRESHOLDS,
-      dataset: { ...active, bars: undefined },
-      quote,
-      quotePaused,
-      manualOverride,
-      manualUpdatedAt,
-      manualDate: manualOverride ? anchorDate : undefined,
-      manualSession: manualOverride ? manualSession : undefined,
+      ...(weeklyIntraday ? ["weekly-intraday-resolution"] : []),
+    ],
+    [historyStale, staleGrade, weeklyIntraday],
+  );
+  const analysisInput = useMemo(
+    () => active && anchorPrice > 0 ? {
+      bars: active.bars,
       anchorPrice,
       anchorDate,
       intraday: analysisIntraday,
+      interval: active.interval,
+    } : undefined,
+    [active, anchorPrice, anchorDate, analysisIntraday],
+  );
+  const reportInput = useMemo(
+    () => analysisInput ? {
+      analysis: analysisInput,
+      candidate: Number(candidate) > 0
+        ? { weeks: horizon, price: Number(candidate), side: candidateSide }
+        : undefined,
       gradePaused,
+    } : undefined,
+    [analysisInput, candidate, candidateSide, gradePaused, horizon],
+  );
+  const analysisKey = active && analysisInput
+    ? [
+        active.id,
+        active.sha256,
+        anchorPrice,
+        anchorDate,
+        analysisIntraday,
+        active.interval,
+      ].join("|")
+    : undefined;
+  const reportContext = useMemo(
+    () => active ? {
+      dataset: active,
+      reference: {
+        quote,
+        price: anchorPrice,
+        anchorDate,
+        intraday: analysisIntraday,
+        mode: reference.mode,
+        paused: quotePaused,
+        manualUpdatedAt,
+        manualDate,
+        manualSession,
+      },
       pauseReasons,
       account: {
         cash: Number(cash),
-        assignmentBudgetMultiple: Number(multiple),
-        existingAssignmentObligation: Number(obligation),
-        overlay,
+        multiple: Number(multiple),
+        existingObligation: Number(obligation),
       },
-      candidate: candidateEvaluation
-        ? { side: candidateSide, ...candidateEvaluation }
-        : undefined,
-    };
-    if (kind === "json")
-      downloadText(
-        `${base}.json`,
-        JSON.stringify({ ...provenance, analyses: exportedAnalyses }, null, 2),
-        "application/json",
+      selectedWeeks: horizon,
+    } : undefined,
+    [
+      active,
+      anchorDate,
+      anchorPrice,
+      analysisIntraday,
+      cash,
+      horizon,
+      manualDate,
+      manualSession,
+      manualUpdatedAt,
+      multiple,
+      obligation,
+      pauseReasons,
+      quote,
+      quotePaused,
+      reference.mode,
+    ],
+  );
+  const {
+    report,
+    loading: analysisLoading,
+    error: analysisError,
+  } = useAnalysisReport({
+    input: reportInput,
+    analysisKey,
+    context: reportContext,
+  });
+  const analyses = report?.analyses ?? [];
+  const selected = analyses[horizon - 1];
+  const candidateOverlayPending = candidateSide === "lower" && Number(candidate) > 0 && analysisLoading;
+  const overlay = candidateOverlayPending ? undefined : report?.account.overlay;
+
+  async function handleHistoryFile(
+    file: File | undefined,
+    interval: "daily" | "weekly",
+  ) {
+    if (!file) return;
+    const matchingDaily = interval === "weekly"
+      ? datasets.find(
+          (dataset) => dataset.symbol === importSymbol.toUpperCase() && dataset.interval === "daily",
+        )
+      : undefined;
+    const result = await historyCatalog.importAndActivate(await file.text(), {
+      symbol: importSymbol.toUpperCase(),
+      filename: file.name,
+      sourceUrl: importSourceUrl,
+      importedAt: new Date().toISOString(),
+      splitAdjustedConfirmed: confirmed,
+      discontinuitiesConfirmed,
+      interval,
+    });
+    const nextMessages = [
+      ...result.errors.map((item) => `錯誤：${item.message}`),
+      ...result.warnings.map((item) => `提醒：${item.message}`),
+    ];
+    if (!result.dataset) {
+      setMessages(nextMessages);
+      return;
+    }
+    if (
+      interval === "weekly" &&
+      matchingDaily
+    ) {
+      const reconciliation = reconcileWeekly(
+        matchingDaily.bars,
+        result.dataset.bars,
       );
-    else
-      downloadText(
-        `${base}.csv`,
-        rowsToCsv(
-          exportedAnalyses.flatMap((item) => [
-            ...item.lower.map((risk) => ({
-              symbol: active.symbol,
-              modelVersion: MODEL_VERSION,
-              dataHash: active.sha256,
-              quoteTime: manualOverride
-                ? (manualUpdatedAt ?? "")
-                : (quote?.quoteTime ?? ""),
-              quoteSource: manualOverride
-                ? "Manual Reference Price"
-                : (quote?.source ?? ""),
-              gradePaused: String(gradePaused),
-              pauseReasons: pauseReasons.join("|"),
-              anchorPrice,
-              anchorDate,
-              weeks: item.weeks,
-              targetDate: item.targetDate,
-              side: "lower",
-              grade: risk.grade,
-              price: risk.price,
-              returnPct: risk.returnPct,
-              expirationEstimate: risk.expirationBreach,
-              expirationLower95: risk.expirationLower95,
-              expirationUpper95: risk.expirationUpper95,
-              touchEstimate: risk.pathTouch,
-              touchLower95: risk.pathTouchLower95,
-              touchUpper95: risk.pathTouchUpper95,
-              sampleSize: item.sampleSize,
-              effectiveSampleSize: item.effectiveSampleSize,
-              pathMinPct: item.empirical.pathMinPct,
-              pathMaxPct: item.empirical.pathMaxPct,
-              evtStressPct: item.evt.lowerStressPct ?? "",
-              evtDiagnostics: item.evt.lowerDiagnostics,
-            })),
-            ...item.upper.map((risk) => ({
-              symbol: active.symbol,
-              modelVersion: MODEL_VERSION,
-              dataHash: active.sha256,
-              quoteTime: manualOverride
-                ? (manualUpdatedAt ?? "")
-                : (quote?.quoteTime ?? ""),
-              quoteSource: manualOverride
-                ? "Manual Reference Price"
-                : (quote?.source ?? ""),
-              gradePaused: String(gradePaused),
-              pauseReasons: pauseReasons.join("|"),
-              anchorPrice,
-              anchorDate,
-              weeks: item.weeks,
-              targetDate: item.targetDate,
-              side: "upper",
-              grade: risk.grade,
-              price: risk.price,
-              returnPct: risk.returnPct,
-              expirationEstimate: risk.expirationBreach,
-              expirationLower95: risk.expirationLower95,
-              expirationUpper95: risk.expirationUpper95,
-              touchEstimate: risk.pathTouch,
-              touchLower95: risk.pathTouchLower95,
-              touchUpper95: risk.pathTouchUpper95,
-              sampleSize: item.sampleSize,
-              effectiveSampleSize: item.effectiveSampleSize,
-              pathMinPct: item.empirical.pathMinPct,
-              pathMaxPct: item.empirical.pathMaxPct,
-              evtStressPct: item.evt.upperStressPct ?? "",
-              evtDiagnostics: item.evt.upperDiagnostics,
-            })),
-          ]),
-        ),
-        "text/csv",
+      nextMessages.push(
+        `Weekly 對帳：${reconciliation.comparisons.length} 個可比較週收盤，${reconciliation.mismatchCount} 個差異超過 0.5%。Weekly 已儲存，Daily 維持 Active。`,
       );
+    } else if (interval === "weekly") {
+      nextMessages.push(
+        "已啟用 Weekly-only 分析：使用每週 OHLC 計算週收盤與週內觸及，精度低於 Daily。",
+      );
+    }
+    setMessages(nextMessages);
+  }
+
+  function exportResults(kind: "json" | "csv") {
+    if (!report) return;
+    const serialized = serializeAnalysisReport(report, kind);
+    downloadText(serialized.filename, serialized.text, serialized.mimeType);
   }
 
   return (
@@ -461,7 +322,7 @@ export function App() {
             <Button
               variant="outline"
               size="sm"
-              disabled={!active}
+              disabled={!report || analysisLoading}
               onClick={() => exportResults("csv")}
             >
               <Download size={15} /> CSV
@@ -469,7 +330,7 @@ export function App() {
             <Button
               variant="outline"
               size="sm"
-              disabled={!active}
+              disabled={!report || analysisLoading}
               onClick={() => exportResults("json")}
             >
               <Download size={15} /> JSON
@@ -487,19 +348,19 @@ export function App() {
             </div>
             <div className="space-y-3">
               <label>
-                <span className="field-label">Symbol</span>
+                <span className="field-label">待匯入 Symbol</span>
                 <Input
-                  value={symbol}
+                  value={importSymbol}
                   onChange={(event) =>
-                    setSymbol(event.target.value.toUpperCase())
+                    setImportSymbol(event.target.value.toUpperCase())
                   }
                 />
               </label>
               <label>
-                <span className="field-label">資料來源 URL</span>
+                <span className="field-label">待匯入資料來源 URL</span>
                 <Input
-                  value={sourceUrl}
-                  onChange={(event) => setSourceUrl(event.target.value)}
+                  value={importSourceUrl}
+                  onChange={(event) => setImportSourceUrl(event.target.value)}
                 />
               </label>
               <label className="flex items-start gap-2 text-xs text-[#565656]">
@@ -529,23 +390,25 @@ export function App() {
                   className="sr-only"
                   type="file"
                   accept=".csv,text/csv"
-                  onChange={(event) => void handleFile(event.target.files?.[0])}
+                  disabled={!historyCatalog.ready}
+                  onChange={(event) =>
+                    void handleHistoryFile(event.target.files?.[0], "daily")
+                  }
                 />
               </label>
-              {active && (
-                <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#D8D8D8] bg-white text-xs font-semibold hover:bg-[#F8F8F8]">
-                  <FileUp size={14} />
-                  <span>Weekly CSV 對帳（選用）</span>
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept=".csv,text/csv"
-                    onChange={(event) =>
-                      void handleWeeklyFile(event.target.files?.[0])
-                    }
-                  />
-                </label>
-              )}
+              <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#D8D8D8] bg-white text-xs font-semibold hover:bg-[#F8F8F8]">
+                <FileUp size={14} />
+                <span>選擇 Weekly CSV</span>
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept=".csv,text/csv"
+                  disabled={!historyCatalog.ready}
+                  onChange={(event) =>
+                    void handleHistoryFile(event.target.files?.[0], "weekly")
+                  }
+                />
+              </label>
             </div>
             {messages.length > 0 && (
               <div className="ui-enter mt-3 space-y-1 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B4F00]">
@@ -553,6 +416,11 @@ export function App() {
                   <p key={message}>{message}</p>
                 ))}
               </div>
+            )}
+            {historyCatalog.error && (
+              <p className="mt-3 border-t border-[#E5E5E5] pt-3 text-xs font-semibold text-red-700">
+                本機資料庫錯誤：{historyCatalog.error}
+              </p>
             )}
           </section>
           <section className="panel p-4">
@@ -566,11 +434,7 @@ export function App() {
                   variant="ghost"
                   size="icon"
                   aria-label="清除全部"
-                  onClick={async () => {
-                    await clearDatasets();
-                    setDatasets([]);
-                    setActiveId("");
-                  }}
+                  onClick={() => void historyCatalog.clear()}
                 >
                   <Trash2 size={16} />
                 </Button>
@@ -587,30 +451,23 @@ export function App() {
                 >
                   <button
                     className="min-w-0 flex-1 text-left"
-                    onClick={() => {
-                      setActiveId(dataset.id);
-                      void setActiveDataset(dataset.id);
-                    }}
+                    onClick={() => void historyCatalog.activate(dataset.id)}
                   >
-                    <strong className="block text-sm">{dataset.symbol}</strong>
+                    <strong className="flex items-center gap-2 text-sm">
+                      {dataset.symbol}
+                      <span className="rounded bg-[#EFEFEF] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#565656]">
+                        {dataset.interval}
+                      </span>
+                    </strong>
                     <span className="block truncate text-[11px] text-[#6B7280]">
-                      {dataset.bars.length.toLocaleString()} sessions
+                      {dataset.bars.length.toLocaleString()} {dataset.interval === "daily" ? "sessions" : "weeks"}
                     </span>
                   </button>
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label="刪除資料集"
-                    onClick={async () => {
-                      await deleteDataset(dataset.id);
-                      const next = await listDatasets();
-                      setDatasets(next);
-                      if (activeId === dataset.id) {
-                        const nextId = next[0]?.id ?? "";
-                        setActiveId(nextId);
-                        await setActiveDataset(nextId);
-                      }
-                    }}
+                    onClick={() => void historyCatalog.remove(dataset.id)}
                   >
                     <Trash2 size={14} />
                   </Button>
@@ -621,18 +478,32 @@ export function App() {
         </aside>
 
         <div className="min-w-0 space-y-4">
-          {!active ? (
+          {!historyCatalog.ready ? (
+            <section className="panel flex min-h-80 items-center justify-center p-8 text-sm text-[#6B7280]">
+              <RefreshCw size={16} className="mr-2 animate-spin" />讀取本機資料集
+            </section>
+          ) : !active ? (
             <section className="panel flex min-h-80 flex-col items-center justify-center p-8 text-center">
               <Database size={28} className="mb-3 text-[#6B7280]" />
-              <h2 className="font-bold">匯入 Daily CSV 開始分析</h2>
+              <h2 className="font-bold">匯入 Daily 或 Weekly CSV 開始分析</h2>
               <p className="mt-2 max-w-md text-sm text-[#6B7280]">
-                Daily 為權威資料；Weekly 僅可用於對帳，不會驅動風險分級。
+                Daily 提供較完整的逐日路徑；只有 Weekly 時仍可用週 OHLC 進行較低解析度分析。
               </p>
             </section>
           ) : (
             <>
               <section className="panel grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center">
                 <div>
+                  <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase text-[#6B7280]">
+                    <span>Active Symbol</span>
+                    <TermHelp
+                      explanation={active.interval === "daily"
+                        ? "目前 Yahoo 報價與分析都綁定這個 Daily 資料集的 Symbol。"
+                        : "目前 Yahoo 報價與分析都綁定這個 Weekly 資料集的 Symbol；結果是較低解析度的週線估計。"}
+                    >
+                      {active.interval === "daily" ? "Daily" : "Weekly-only"}
+                    </TermHelp>
+                  </div>
                   <div className="flex flex-wrap items-baseline gap-3">
                     <h2 className="text-2xl font-bold">{active.symbol}</h2>
                     <span className="num text-3xl font-bold">
@@ -670,6 +541,7 @@ export function App() {
                       {manualOverride
                         ? "手動參考價"
                         : (quote?.source ?? "尚無自動報價")}
+                      {quote ? ` · ${quote.symbol}` : ""}
                     </span>
                   </div>
                   {quoteError && !manualOverride && (
@@ -689,7 +561,9 @@ export function App() {
                     <input
                       type="checkbox"
                       checked={quotePaused}
-                      onChange={(event) => setQuotePaused(event.target.checked)}
+                      onChange={(event) =>
+                        referencePrice.setPaused(event.target.checked)
+                      }
                     />
                     暫停報價
                   </label>
@@ -701,12 +575,9 @@ export function App() {
                       min="0"
                       step="0.01"
                       value={manualPrice}
-                      onChange={(event) => {
-                        setManualPrice(event.target.value);
-                        setManualOverride(true);
-                        setManualUpdatedAt(new Date().toISOString());
-                        setQuoteError("");
-                      }}
+                      onChange={(event) =>
+                        referencePrice.setManualPrice(event.target.value)
+                      }
                     />
                   </label>
                   <Tooltip content="Refresh regular-session quote from Yahoo Finance">
@@ -714,9 +585,13 @@ export function App() {
                       variant="outline"
                       size="icon"
                       aria-label="更新報價"
-                      onClick={() => void refreshQuote(true)}
+                      disabled={reference.loading}
+                      onClick={() => referencePrice.refresh(true)}
                     >
-                      <RefreshCw size={16} />
+                      <RefreshCw
+                        size={16}
+                        className={reference.loading ? "animate-spin" : undefined}
+                      />
                     </Button>
                   </Tooltip>
                 </div>
@@ -729,10 +604,9 @@ export function App() {
                     <Input
                       type="date"
                       value={manualDate}
-                      onChange={(event) => {
-                        setManualDate(event.target.value);
-                        setManualUpdatedAt(new Date().toISOString());
-                      }}
+                      onChange={(event) =>
+                        referencePrice.setManualDate(event.target.value)
+                      }
                     />
                   </label>
                   <label>
@@ -740,12 +614,11 @@ export function App() {
                     <select
                       className="h-10 w-full rounded-md border border-[#D8D8D8] bg-white px-3 text-sm"
                       value={manualSession}
-                      onChange={(event) => {
-                        setManualSession(
+                      onChange={(event) =>
+                        referencePrice.setManualSession(
                           event.target.value as "intraday" | "closed",
-                        );
-                        setManualUpdatedAt(new Date().toISOString());
-                      }}
+                        )
+                      }
                     >
                       <option value="closed">已收盤</option>
                       <option value="intraday">
@@ -760,14 +633,22 @@ export function App() {
                   <div>
                     <div className="flex items-center gap-2"><h2 className="text-sm font-bold">目標週收盤區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin" />統計更新中</span>}</div>
                     <p className="mt-1 text-xs text-[#6B7280]">
-                      {analysisIntraday
+                      {active.interval === "weekly"
+                        ? "Weekly-only：以每週 OHLC 建立連續週期路徑；週收盤與週內 High/Low 可分析，但無法還原逐日先後順序。"
+                        : analysisIntraday
                         ? "Intraday Conservative Preview：以當前價為錨，沿用歷史 Open→High/Low/Close 全時段路徑。"
                         : "已收盤錨定：從下一交易時段開始計算路徑。"}
                     </p>
                     {historyStale && (
                       <p className="mt-1 text-xs font-semibold text-red-700">
-                        Daily CSV 未更新至前一正常交易日{" "}
-                        {previousRegularSession(anchorDate)}，分級已暫停。
+                        {active.interval === "daily"
+                          ? `Daily CSV 未更新至前一正常交易日 ${previousRegularSession(anchorDate)}，分級已暫停。`
+                          : "Weekly CSV 距參考日超過兩週，分級已暫停。"}
+                      </p>
+                    )}
+                    {weeklyIntraday && (
+                      <p className="mt-1 text-xs font-semibold text-red-700">
+                        Weekly-only 無法重建盤中剩餘交易日，價格區間僅作情境預覽，分級已暫停。
                       </p>
                     )}
                     {analysisError && <p className="mt-1 text-xs font-semibold text-red-700">{analysisError}</p>}
@@ -791,8 +672,9 @@ export function App() {
                     stale={gradePaused}
                     anchorPrice={anchorPrice}
                     candidate={
-                      candidateSide === "lower" && Number(candidate) > 0
-                        ? Number(candidate)
+                      report?.candidate?.side === "lower" &&
+                      report.candidate.weeks === horizon
+                        ? report.candidate.result.price
                         : undefined
                     }
                   />
@@ -829,17 +711,16 @@ export function App() {
                       <option value="upper">上檔 / Call</option>
                     </select>
                   </div>
-                  {selected && Number(candidate) > 0 && (
+                  {report?.candidate && report.candidate.weeks === horizon && (
                     <CandidateResult
-                      analysis={selected}
+                      candidate={report.candidate}
                       anchorPrice={anchorPrice}
-                      price={Number(candidate)}
-                      side={candidateSide}
-                      stale={gradePaused}
-                      active={active}
-                      anchorDate={anchorDate}
-                      intraday={analysisIntraday}
                     />
+                  )}
+                  {Number(candidate) > 0 && !report?.candidate && analysisLoading && (
+                    <p className="mt-4 flex items-center gap-1 border-t border-[#E5E5E5] pt-4 text-xs text-[#6B7280]">
+                      <RefreshCw size={12} className="animate-spin" />候選價統計更新中
+                    </p>
                   )}
                 </div>
                 <div className="panel p-4">
@@ -882,7 +763,7 @@ export function App() {
                       />
                     </label>
                   </div>
-                  {!overlay.valid && (
+                  {overlay && !overlay.valid && (
                     <p className="mt-3 text-xs font-semibold text-red-700">
                       帳戶與價格輸入必須是有限的非負數。
                     </p>
@@ -890,18 +771,18 @@ export function App() {
                   <dl className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
                     <dt className="text-[#6B7280]">指派預算</dt>
                     <dd className="num text-right font-semibold">
-                      {money.format(overlay.budget)}
+                      {overlay ? money.format(overlay.budget) : "—"}
                     </dd>
                     <dt className="text-[#6B7280]">剩餘可用</dt>
                     <dd
-                      className={`num text-right font-semibold ${overlay.available <= 0 ? "text-red-700" : ""}`}
+                      className={`num text-right font-semibold ${overlay && overlay.available <= 0 ? "text-red-700" : ""}`}
                     >
-                      {money.format(overlay.available)}
-                      {overlay.available < 0 ? " · 已超額承擔" : ""}
+                      {overlay ? money.format(overlay.available) : "—"}
+                      {overlay && overlay.available < 0 ? " · 已超額承擔" : ""}
                     </dd>
                     <dt className="text-[#6B7280]">Put 價每口現貨價值</dt>
                     <dd className="num text-right font-semibold">
-                      {money.format(overlay.contractCost)}
+                      {overlay ? money.format(overlay.contractCost) : "—"}
                     </dd>
                   </dl>
                   <p className="mt-4 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B7280]">
@@ -948,7 +829,7 @@ export function App() {
                       模型邊界 · v{MODEL_VERSION}
                     </strong>
                     <p className="mt-1">
-                      全歷史等權、同週內位置配對、連續區塊 bootstrap。EVT
+                      全歷史等權、{active.interval === "daily" ? "同週內位置配對" : "連續週線配對"}、連續區塊 bootstrap。EVT
                       只是尾部壓力，不參與分級，也不假設正態分配。此工具不是投資建議。
                     </p>
                   </div>
@@ -1014,7 +895,7 @@ function RiskTable({
                     門檻不可達
                   </span>
                 ) : (
-                  <Grade grade={stale ? "insufficient" : row.grade} />
+                  <Grade grade={row.grade} />
                 )}
               </td>
               <td className="num px-3 py-3 text-right font-bold">
@@ -1117,47 +998,23 @@ function RiskTable({
 }
 
 function CandidateResult({
-  analysis,
+  candidate,
   anchorPrice,
-  price,
-  side,
-  stale,
-  active,
-  anchorDate,
-  intraday,
 }: {
-  analysis: HorizonAnalysis;
+  candidate: CandidateAnalysis;
   anchorPrice: number;
-  price: number;
-  side: "lower" | "upper";
-  stale: boolean;
-  active: HistoryDataset;
-  anchorDate: string;
-  intraday: boolean;
 }) {
-  const paths = useMemo(
-    () =>
-      extractMatchedPaths(active.bars, anchorDate, analysis.weeks, intraday),
-    [active, anchorDate, analysis.weeks, intraday],
-  );
-  const result = evaluateCandidate(
-    anchorPrice,
-    price,
-    side,
-    paths,
-    analysis.effectiveSampleSize,
-    analysis.weeks,
-  );
+  const { result, sampleSize } = candidate;
   return (
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm">
       <div>
         <span className="field-label">分級</span>
-        <Grade grade={stale ? "insufficient" : result.grade} />
+        <Grade grade={result.grade} />
       </div>
       <div>
         <span className="field-label">相對當前價</span>
         <strong className="num">
-          {percent.format(price / anchorPrice - 1)}
+          {percent.format(result.price / anchorPrice - 1)}
         </strong>
       </div>
       <div>
@@ -1168,7 +1025,7 @@ function CandidateResult({
           {percent.format(result.expirationUpper95)}]
         </strong>
         <small className="block text-[#6B7280]">
-          {Math.round(result.expirationBreach * paths.length)} / {paths.length}{" "}
+          {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
           events
         </small>
       </div>
@@ -1180,7 +1037,7 @@ function CandidateResult({
           {percent.format(result.pathTouchUpper95)}]
         </strong>
         <small className="block text-[#6B7280]">
-          {Math.round(result.pathTouch * paths.length)} / {paths.length} events
+          {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
         </small>
       </div>
     </div>
