@@ -21,6 +21,7 @@ import { useHistoryCatalog } from "./hooks/use-history-catalog";
 import { useReferencePrice } from "./hooks/use-reference-price";
 import { TermHelp } from "./components/term-help";
 import { DownsideDistributionChart } from "./components/downside-distribution-chart";
+import { EvaluationContext } from "./components/evaluation-context";
 import type {
   HorizonAnalysis,
   RiskGrade,
@@ -690,10 +691,18 @@ export function App() {
                 <div className="panel p-4">
                   <div className="mb-4 flex items-center gap-2">
                     <h2 className="text-sm font-bold">自訂價格評估</h2>
-                    <Tooltip content="Evaluates a continuous price; no option-chain strike rounding is applied.">
+                    <Tooltip content="自訂價格只替換候選價；參考日期、時段、週期與目標收盤日沿用目前分析。">
                       <Info size={14} className="text-[#6B7280]" />
                     </Tooltip>
                   </div>
+                  {selected && (
+                    <EvaluationContext
+                      anchorDate={anchorDate}
+                      intraday={analysisIntraday}
+                      targetDate={selected.targetDate}
+                      weeks={selected.weeks}
+                    />
+                  )}
                   <div className="grid grid-cols-[1fr_120px] gap-2">
                     <Input
                       className="num"

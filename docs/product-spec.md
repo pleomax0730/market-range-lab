@@ -115,6 +115,8 @@ Premium is ignored conservatively. Whole 100-share contract feasibility may be e
 6. Select a horizon for detailed distribution, range, touch, close, confidence, and stress views.
 7. Optionally pause quote refresh, override the Reference Price, or export the result.
 
+The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected horizon's Target Week Close. Changing a Candidate Price never silently changes that evaluation context.
+
 Analysis recomputes automatically after a fresh 30-second quote or a debounced input change. There is no primary `Run Analysis` button.
 
 ## Interface Direction
