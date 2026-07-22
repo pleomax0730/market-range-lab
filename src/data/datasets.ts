@@ -53,6 +53,7 @@ export async function getActiveDatasetId(): Promise<string | undefined> {
 }
 
 export type DashboardSettings = {
+  settingsVersion: 2
   cash: string
   multiple: string
   obligation: string
@@ -61,8 +62,13 @@ export type DashboardSettings = {
   horizon: number
 }
 
+type PersistedDashboardSettings = Omit<DashboardSettings, 'settingsVersion'> & {
+  settingsVersion?: number
+}
+
 export function defaultDashboardSettings(): DashboardSettings {
   return {
+    settingsVersion: 2,
     cash: '60000',
     multiple: '1.2',
     obligation: '0',
@@ -72,10 +78,20 @@ export function defaultDashboardSettings(): DashboardSettings {
   }
 }
 
+export function normalizeDashboardSettings(settings: PersistedDashboardSettings): DashboardSettings {
+  return {
+    ...settings,
+    settingsVersion: 2,
+    obligation: settings.settingsVersion === undefined && settings.obligation === '75000'
+      ? '0'
+      : settings.obligation,
+  }
+}
+
 export async function saveDashboardSettings(settings: DashboardSettings) {
   return (await database).put('settings', settings, 'dashboardSettings')
 }
 
-export async function getDashboardSettings(): Promise<DashboardSettings | undefined> {
+export async function getDashboardSettings(): Promise<PersistedDashboardSettings | undefined> {
   return (await database).get('settings', 'dashboardSettings')
 }

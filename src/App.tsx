@@ -28,6 +28,7 @@ import type {
 import {
   defaultDashboardSettings,
   getDashboardSettings,
+  normalizeDashboardSettings,
   saveDashboardSettings,
 } from "./data/datasets";
 import { Button } from "./components/ui/button";
@@ -113,12 +114,13 @@ export function App() {
     void (async () => {
       const settings = await getDashboardSettings();
       if (settings) {
-        setCash(settings.cash);
-        setMultiple(settings.multiple);
-        setObligation(settings.obligation);
-        setCandidate(settings.candidate);
-        setCandidateSide(settings.candidateSide);
-        setHorizon(settings.horizon);
+        const normalized = normalizeDashboardSettings(settings);
+        setCash(normalized.cash);
+        setMultiple(normalized.multiple);
+        setObligation(normalized.obligation);
+        setCandidate(normalized.candidate);
+        setCandidateSide(normalized.candidateSide);
+        setHorizon(normalized.horizon);
       }
       setSettingsLoaded(true);
     })();
@@ -129,6 +131,7 @@ export function App() {
     const timer = window.setTimeout(
       () =>
         void saveDashboardSettings({
+          settingsVersion: 2,
           cash,
           multiple,
           obligation,
