@@ -162,7 +162,8 @@ _Avoid_: Guaranteed safe
 
 **Dangerous Grade**:
 A Safety Grade assigned when either 95% upper confidence bound exceeds the Safe Grade threshold.
-_Avoid_: Certain loss
+The UI label is `超出安全門檻` because this classification does not imply that a breach or touch is certain.
+_Avoid_: Certain loss, guaranteed touch, displaying the grade as `危險`
 
 **Insufficient Evidence**:
 A result with fewer than 100 effective independent historical paths, or a Scenario Horizon, for which ranges and probabilities are shown without a Safety Grade.

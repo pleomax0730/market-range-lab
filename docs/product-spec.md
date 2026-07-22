@@ -78,11 +78,13 @@ Probabilities are not added. The overall grade uses the more adverse side-specif
 
 Grades use 95% upper confidence bounds, not point estimates.
 
-| Grade | Expiration breach | Path touch |
-| --- | ---: | ---: |
-| Conservative | <= 0.5% | <= 1% |
-| Safe | <= 2% | <= 5% |
-| Dangerous | either Safe limit exceeded | either Safe limit exceeded |
+| Internal grade | UI label | Expiration breach | Path touch |
+| --- | --- | ---: | ---: |
+| Conservative | `符合保守門檻` | <= 0.5% | <= 1% |
+| Safe | `符合安全門檻` | <= 2% | <= 5% |
+| Dangerous | `超出安全門檻` | either Safe limit exceeded | either Safe limit exceeded |
+
+The UI describes grades as threshold classifications. It never displays `Dangerous` as a prediction that a boundary will certainly be touched, and grade tooltips explicitly distinguish threshold failure from certainty.
 
 Fewer than 100 effective independent paths produces `Insufficient Evidence`, not a grade. Scenario Horizons are also ungraded. Advanced overrides are allowed but remain explicit in the UI and export.
 

@@ -22,10 +22,8 @@ import { useReferencePrice } from "./hooks/use-reference-price";
 import { TermHelp } from "./components/term-help";
 import { DownsideDistributionChart } from "./components/downside-distribution-chart";
 import { EvaluationContext } from "./components/evaluation-context";
-import type {
-  HorizonAnalysis,
-  RiskGrade,
-} from "./domain/types";
+import { RiskGradeBadge } from "./components/risk-grade-badge";
+import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
   getDashboardSettings,
@@ -48,13 +46,6 @@ const percent = new Intl.NumberFormat("zh-TW", {
   style: "percent",
   maximumFractionDigits: 2,
 });
-const gradeText: Record<RiskGrade, string> = {
-  conservative: "保守",
-  safe: "安全",
-  dangerous: "危險",
-  insufficient: "證據不足",
-  scenario: "情境參考",
-};
 const dashboardDefaults = defaultDashboardSettings();
 
 function formatTime(iso: string, zone: string) {
@@ -66,16 +57,6 @@ function formatTime(iso: string, zone: string) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(iso));
-}
-
-function Grade({ grade }: { grade: RiskGrade }) {
-  return (
-    <span
-      className={`inline-flex min-w-16 justify-center rounded px-2 py-1 text-xs font-bold risk-${grade}`}
-    >
-      {gradeText[grade]}
-    </span>
-  );
 }
 
 export function App() {
@@ -909,7 +890,7 @@ function RiskTable({
                     門檻不可達
                   </span>
                 ) : (
-                  <Grade grade={row.grade} />
+                  <RiskGradeBadge grade={row.grade} />
                 )}
               </td>
               <td className="num px-3 py-3 text-right font-bold">
@@ -990,7 +971,7 @@ function RiskTable({
           </strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="Extreme Value Theory stress：只有尾部擬合通過穩定性與適合度檢查才顯示。它是壓力情境，不參與保守／安全分級。">EVT stress</TermHelp></span>
+          <span className="block text-[#6B7280]"><TermHelp explanation="Extreme Value Theory stress：只有尾部擬合通過穩定性與適合度檢查才顯示。它是壓力情境，不參與門檻分級。">EVT stress</TermHelp></span>
           <strong className="num">
             {analysis.evt.lowerStressPct === undefined
               ? "不可用"
@@ -1004,7 +985,7 @@ function RiskTable({
       </div>
       {analysis.weeks > 4 && (
         <p className="mt-3 text-xs text-[#6B7280]">
-          5–8 週只是情境分析，不顯示保守／安全決策等級。
+          5–8 週只是情境分析，不顯示門檻決策等級。
         </p>
       )}
     </div>
@@ -1023,7 +1004,7 @@ function CandidateResult({
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm">
       <div>
         <span className="field-label">分級</span>
-        <Grade grade={result.grade} />
+        <RiskGradeBadge grade={result.grade} />
       </div>
       <div>
         <span className="field-label">相對當前價</span>
