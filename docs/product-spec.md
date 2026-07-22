@@ -8,7 +8,7 @@ Build a local dashboard that imports split-adjusted daily or weekly price histor
 
 Supported instruments are US-listed common stocks and ETFs during regular market sessions in `America/New_York`. Cryptoassets, futures, non-US listings, and option contracts as historical datasets are excluded.
 
-The first version excludes option chains, premiums, Greeks, broker margin, precise liquidation prices, trade quantities, order entry, IBKR integration, and public deployment.
+The current version includes auditable historical compensation floors for cash-secured Put premiums. It excludes live option chains, theoretical option valuation, implied volatility, Greeks, broker margin, precise liquidation prices, trade quantities, order entry, IBKR integration, and public deployment.
 
 ## Inputs
 
@@ -18,6 +18,8 @@ The first version excludes option chains, premiums, Greeks, broker margin, preci
 - Current regular-session quote from Yahoo, or a visibly identified manual override.
 - Cash balance, Assignment Budget Multiple, and Existing Assignment Obligation.
 - One selected Candidate Price for detailed evaluation, while system-generated range boundaries remain continuous prices.
+- Optional executable Put premium per share for comparison with historical compensation floors; it is entered manually and is not treated as a live quote.
+- Annual cash-secured capital-return hurdle, persisted locally and defaulted to 10%; changing it reprices the derived floors without recomputing historical paths.
 - Optional advanced overrides for grading thresholds; every override is included in exports.
 
 For Investing.com exports, the column mapper defaults `Date`, `Price -> Close`, `Open`, `High`, `Low`, and optional `Vol.`. `Change %` is recomputed from Close values and used only as a discrepancy check.
@@ -74,6 +76,19 @@ For every horizon and Candidate Price, calculate separately:
 
 Probabilities are not added. The overall grade uses the more adverse side-specific classification.
 
+For a downside Put Candidate Price, calculate expiration payoff loss on every matched historical path as `max(strike - projected expiration price, 0)`. Report mean loss, mean loss conditional on a positive payoff, a contiguous-block-bootstrap 95% interval for mean loss, CVaR95 across the worst 5% of losses, and the maximum observed loss.
+
+The Put premium view reports four secondary historical references per share:
+
+1. Statistical Compensation Floor: upper 95% mean-loss confidence bound plus $0.03 default transaction cost.
+2. Capital Return Floor: Statistical Compensation Floor plus `strike * annual hurdle * calendar days / 365`; the annual hurdle defaults to 10% and is user-adjustable.
+3. Light Tail Floor: Capital Return Floor plus `10% * (CVaR95 - mean loss)`.
+4. Conservative Tail Floor: Capital Return Floor plus `25% * (CVaR95 - mean loss)`.
+
+These defaults and formula components are visible and exported. The 10% and 25% tail additions are risk-preference assumptions, not statistically calibrated prices. An entered executable net bid or plausible limit fill is located relative to the references, but the UI never describes that comparison as evidence that a Put is cheap or worth selling. Premium status never changes the Candidate Price's Safety Grade. The model does not calculate a Naked Call minimum premium because finite history cannot bound its theoretical loss.
+
+Premium comparison requires at least 20 effective positive-payoff observations (`effective sample size * observed payoff rate`). Below that evidence gate, comparison status is `insufficient-evidence`. When no historical path produces a positive Put payoff, bootstrap mean loss and historical CVaR cannot estimate an unobserved jump loss. The interface displays an explicit warning and does not describe the resulting cost-and-capital-only reference as market fair value or evidence of a cheap option.
+
 ## Safety Grades
 
 Grades use 95% upper confidence bounds, not point estimates.
@@ -93,6 +108,8 @@ Fewer than 100 effective independent paths produces `Insufficient Evidence`, not
 Model boundaries are continuous prices and are displayed to the symbol's supported precision. They are not rounded to assumed option strike intervals. A dedicated input evaluates any user-entered price such as `$100` or `$105` against every selected horizon.
 
 Downside levels support put-oriented analysis; upside levels support call-oriented analysis. The account overlay applies only to downside put assignment. Upside call levels are statistical and never labeled capital-safe.
+
+Downside Put candidates additionally show historical premium compensation floors. These are not option-chain quotes, Black-Scholes values, implied probabilities, or claims that a trade is worthwhile. Upper Call candidates explicitly suppress the premium floor because Naked Call loss is unbounded.
 
 ## Assignment Budget Overlay
 
@@ -115,7 +132,8 @@ Premium is ignored conservatively. Whole 100-share contract feasibility may be e
 4. Enter cash, assignment multiple, existing obligation, and optional Candidate Price.
 5. Review the one-to-eight-week summary table.
 6. Select a horizon for detailed distribution, range, touch, close, confidence, and stress views.
-7. Optionally pause quote refresh, override the Reference Price, or export the result.
+7. For a downside Put candidate, review the four premium compensation floors and optionally compare a manually entered executable premium.
+8. Optionally pause quote refresh, override the Reference Price, or export the result.
 
 The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected horizon's Target Week Close. Changing a Candidate Price never silently changes that evaluation context.
 
@@ -137,7 +155,7 @@ Each stored dataset includes source metadata, original filename, SHA-256 hash, d
 
 ## Export
 
-The first version exports JSON and CSV, not PDF. Exports include all inputs, data provenance, file hash, model version, thresholds, quote source and timestamp, path counts, estimates, confidence intervals, warnings, and results for all horizons.
+The application exports JSON and CSV, not PDF. Exports include all inputs, data provenance, file hash, model version, thresholds, quote source and timestamp, path counts, estimates, confidence intervals, premium-floor assumptions and components, optional executable premium, warnings, and results for all horizons.
 
 ## Failure States
 

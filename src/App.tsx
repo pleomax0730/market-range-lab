@@ -16,12 +16,14 @@ import {
 import { previousRegularSession } from "./domain/market-calendar";
 import { reconcileWeekly } from "./domain/reconcile-weekly";
 import { MODEL_VERSION } from "./domain/model";
+import { DEFAULT_PREMIUM_ASSUMPTIONS } from "./domain/premium-analysis";
 import { useAnalysisReport } from "./hooks/use-analysis-report";
 import { useHistoryCatalog } from "./hooks/use-history-catalog";
 import { useReferencePrice } from "./hooks/use-reference-price";
 import { TermHelp } from "./components/term-help";
 import { DownsideDistributionChart } from "./components/downside-distribution-chart";
 import { EvaluationContext } from "./components/evaluation-context";
+import { PremiumAnalysisPanel } from "./components/premium-analysis-panel";
 import { RiskGradeBadge } from "./components/risk-grade-badge";
 import type { HorizonAnalysis } from "./domain/types";
 import {
@@ -73,10 +75,23 @@ export function App() {
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
     dashboardDefaults.candidateSide,
   );
+  const [marketPremiumEntry, setMarketPremiumEntry] = useState({
+    scope: "",
+    value: "",
+  });
   const [cash, setCash] = useState(dashboardDefaults.cash);
   const [multiple, setMultiple] = useState(dashboardDefaults.multiple);
   const [obligation, setObligation] = useState(dashboardDefaults.obligation);
+  const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
+    dashboardDefaults.annualCapitalReturnRatePct,
+  );
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const premiumInputScope = `${activeId ?? ""}|${candidate}|${candidateSide}|${horizon}`;
+  const marketPremium = marketPremiumEntry.scope === premiumInputScope
+    ? marketPremiumEntry.value
+    : "";
+  const setMarketPremium = (value: string) =>
+    setMarketPremiumEntry({ scope: premiumInputScope, value });
   const referencePrice = useReferencePrice({
     symbol: active?.symbol,
     fallbackPrice: active?.bars.at(-1)?.close,
@@ -103,6 +118,7 @@ export function App() {
         setCandidate(normalized.candidate);
         setCandidateSide(normalized.candidateSide);
         setHorizon(normalized.horizon);
+        setAnnualCapitalReturnRatePct(normalized.annualCapitalReturnRatePct);
       }
       setSettingsLoaded(true);
     })();
@@ -113,13 +129,14 @@ export function App() {
     const timer = window.setTimeout(
       () =>
         void saveDashboardSettings({
-          settingsVersion: 2,
+          settingsVersion: 3,
           cash,
           multiple,
           obligation,
           candidate,
           candidateSide,
           horizon,
+          annualCapitalReturnRatePct,
         }),
       300,
     );
@@ -131,6 +148,7 @@ export function App() {
     candidate,
     candidateSide,
     horizon,
+    annualCapitalReturnRatePct,
     settingsLoaded,
   ]);
 
@@ -207,9 +225,23 @@ export function App() {
         existingObligation: Number(obligation),
       },
       selectedWeeks: horizon,
+      marketPremiumPerShare:
+        marketPremium.trim() && Number.isFinite(Number(marketPremium))
+          ? Number(marketPremium)
+          : undefined,
+      premiumAssumptions: {
+        ...DEFAULT_PREMIUM_ASSUMPTIONS,
+        annualCapitalReturnRate:
+          annualCapitalReturnRatePct.trim() &&
+          Number.isFinite(Number(annualCapitalReturnRatePct)) &&
+          Number(annualCapitalReturnRatePct) >= 0
+            ? Number(annualCapitalReturnRatePct) / 100
+            : DEFAULT_PREMIUM_ASSUMPTIONS.annualCapitalReturnRate,
+      },
     } : undefined,
     [
       active,
+      annualCapitalReturnRatePct,
       anchorDate,
       anchorPrice,
       analysisIntraday,
@@ -218,6 +250,7 @@ export function App() {
       manualDate,
       manualSession,
       manualUpdatedAt,
+      marketPremium,
       multiple,
       obligation,
       pauseReasons,
@@ -728,6 +761,10 @@ export function App() {
                         <CandidateResult
                           candidate={candidateResult}
                           anchorPrice={anchorPrice}
+                          marketPremium={marketPremium}
+                          onMarketPremiumChange={setMarketPremium}
+                          annualCapitalReturnRatePct={annualCapitalReturnRatePct}
+                          onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
                         />
                       </div>
                     )}
@@ -1023,9 +1060,17 @@ function RiskTable({
 function CandidateResult({
   candidate,
   anchorPrice,
+  marketPremium,
+  onMarketPremiumChange,
+  annualCapitalReturnRatePct,
+  onAnnualCapitalReturnRatePctChange,
 }: {
   candidate: CandidateAnalysis;
   anchorPrice: number;
+  marketPremium: string;
+  onMarketPremiumChange: (value: string) => void;
+  annualCapitalReturnRatePct: string;
+  onAnnualCapitalReturnRatePctChange: (value: string) => void;
 }) {
   const { result, sampleSize } = candidate;
   return (
@@ -1063,6 +1108,13 @@ function CandidateResult({
           {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
         </small>
       </div>
+      <PremiumAnalysisPanel
+        candidate={candidate}
+        marketPremium={marketPremium}
+        onMarketPremiumChange={onMarketPremiumChange}
+        annualCapitalReturnRatePct={annualCapitalReturnRatePct}
+        onAnnualCapitalReturnRatePctChange={onAnnualCapitalReturnRatePctChange}
+      />
     </div>
   );
 }

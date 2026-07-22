@@ -53,38 +53,47 @@ export async function getActiveDatasetId(): Promise<string | undefined> {
 }
 
 export type DashboardSettings = {
-  settingsVersion: 2
+  settingsVersion: 3
   cash: string
   multiple: string
   obligation: string
   candidate: string
   candidateSide: 'lower' | 'upper'
   horizon: number
+  annualCapitalReturnRatePct: string
 }
 
-type PersistedDashboardSettings = Omit<DashboardSettings, 'settingsVersion'> & {
+type PersistedDashboardSettings = Omit<DashboardSettings, 'settingsVersion' | 'annualCapitalReturnRatePct'> & {
   settingsVersion?: number
+  annualCapitalReturnRatePct?: string
 }
 
 export function defaultDashboardSettings(): DashboardSettings {
   return {
-    settingsVersion: 2,
+    settingsVersion: 3,
     cash: '60000',
     multiple: '1.2',
     obligation: '0',
     candidate: '',
     candidateSide: 'lower',
     horizon: 1,
+    annualCapitalReturnRatePct: '10',
   }
 }
 
 export function normalizeDashboardSettings(settings: PersistedDashboardSettings): DashboardSettings {
   return {
     ...settings,
-    settingsVersion: 2,
+    settingsVersion: 3,
     obligation: settings.settingsVersion === undefined && settings.obligation === '75000'
       ? '0'
       : settings.obligation,
+    annualCapitalReturnRatePct:
+      settings.annualCapitalReturnRatePct !== undefined &&
+      Number.isFinite(Number(settings.annualCapitalReturnRatePct)) &&
+      Number(settings.annualCapitalReturnRatePct) >= 0
+        ? settings.annualCapitalReturnRatePct
+        : '10',
   }
 }
 

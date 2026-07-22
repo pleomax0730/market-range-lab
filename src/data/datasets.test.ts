@@ -7,6 +7,7 @@ import {
 describe("defaultDashboardSettings", () => {
   it("does not assume an existing assignment obligation", () => {
     expect(defaultDashboardSettings().obligation).toBe("0");
+    expect(defaultDashboardSettings().annualCapitalReturnRatePct).toBe("10");
   });
 });
 
@@ -22,6 +23,7 @@ describe("normalizeDashboardSettings", () => {
     };
 
     expect(normalizeDashboardSettings(legacy).obligation).toBe("0");
+    expect(normalizeDashboardSettings(legacy).annualCapitalReturnRatePct).toBe("10");
   });
 
   it("preserves an explicitly saved obligation in current settings", () => {
@@ -31,5 +33,14 @@ describe("normalizeDashboardSettings", () => {
     };
 
     expect(normalizeDashboardSettings(saved).obligation).toBe("75000");
+  });
+
+  it("preserves a valid annual capital return rate", () => {
+    const saved = {
+      ...defaultDashboardSettings(),
+      annualCapitalReturnRatePct: "15",
+    };
+
+    expect(normalizeDashboardSettings(saved).annualCapitalReturnRatePct).toBe("15");
   });
 });

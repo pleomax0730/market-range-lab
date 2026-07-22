@@ -2,6 +2,14 @@ import { analyzeHistory, extractMatchedPaths, type AnalysisInput } from './analy
 import { assignmentOverlay } from './assignment'
 import { applyGradePause } from './export-analysis'
 import { GRADE_THRESHOLDS, MODEL_VERSION } from './model'
+import {
+  calculatePutPremiumAnalysis,
+  classifyPremiumOffer,
+  repricePutPremiumAnalysis,
+  type PremiumOfferStatus,
+  type PremiumAssumptions,
+  type PutPremiumAnalysis,
+} from './premium-analysis'
 import { evaluateCandidate } from './statistics'
 import type {
   DatasetMetadata,
@@ -26,6 +34,8 @@ export type StatisticalReportInput = {
 export type CandidateAnalysis = CandidateRequest & {
   sampleSize: number
   result: RiskSide
+  premium?: PutPremiumAnalysis
+  premiumUnavailableReason?: string
 }
 
 export type StatisticalAnalysisReport = {
@@ -64,6 +74,8 @@ export type AnalysisReportContext = {
     existingObligation: number
   }
   selectedWeeks: number
+  marketPremiumPerShare?: number
+  premiumAssumptions: PremiumAssumptions
 }
 
 export type AnalysisReport = {
@@ -93,6 +105,8 @@ export type AnalysisReport = {
     overlay: ReturnType<typeof assignmentOverlay>
   }
   candidate?: CandidateAnalysis
+  marketPremiumPerShare?: number
+  premiumOfferStatus?: PremiumOfferStatus
   analyses: HorizonAnalysis[]
 }
 
@@ -125,10 +139,26 @@ export function calculateStatisticalReport(
       candidateAnalysis.effectiveSampleSize,
       input.candidate.weeks,
     )
+    const premium = input.candidate.side === 'lower'
+      ? calculatePutPremiumAnalysis({
+          anchorPrice: input.analysis.anchorPrice,
+          strike: input.candidate.price,
+          anchorDate: input.analysis.anchorDate,
+          targetDate: candidateAnalysis.targetDate,
+          paths,
+          effectiveSampleSize: candidateAnalysis.effectiveSampleSize,
+        })
+      : undefined
     candidate = {
       ...input.candidate,
       sampleSize: paths.length,
       result: pauseCandidate(result, input.candidate.weeks, input.gradePaused),
+      premium,
+      ...(input.candidate.side === 'upper'
+        ? { premiumUnavailableReason: 'Naked Call 損失沒有上限；歷史最大漲幅無法形成可靠的最低 Premium。' }
+        : premium
+          ? {}
+          : { premiumUnavailableReason: '沒有足夠的有效歷史路徑計算最低 Premium。' }),
     }
   }
   return {
@@ -164,8 +194,17 @@ export function composeAnalysisReport(
   const selected = statistical.analyses.find(
     (analysis) => analysis.weeks === context.selectedWeeks,
   )
-  const putPrice = statistical.candidate?.side === 'lower'
-    ? statistical.candidate.result.price
+  const adjustedPremium = statistical.candidate?.premium
+    ? repricePutPremiumAnalysis(
+        statistical.candidate.premium,
+        context.premiumAssumptions,
+      )
+    : undefined
+  const candidate = statistical.candidate
+    ? { ...statistical.candidate, premium: adjustedPremium }
+    : undefined
+  const putPrice = candidate?.side === 'lower'
+    ? candidate.result.price
     : (selected?.lower[1]?.price ?? 0)
   const overlay = assignmentOverlay(
     context.account.cash,
@@ -173,6 +212,14 @@ export function composeAnalysisReport(
     context.account.existingObligation,
     putPrice,
   )
+  const marketPremiumPerShare = context.marketPremiumPerShare !== undefined &&
+    Number.isFinite(context.marketPremiumPerShare) &&
+    context.marketPremiumPerShare >= 0
+      ? context.marketPremiumPerShare
+      : undefined
+  const premiumOfferStatus = marketPremiumPerShare !== undefined && candidate?.premium
+    ? classifyPremiumOffer(marketPremiumPerShare, candidate.premium)
+    : undefined
   return {
     modelVersion: MODEL_VERSION,
     thresholds: GRADE_THRESHOLDS,
@@ -195,7 +242,9 @@ export function composeAnalysisReport(
       existingAssignmentObligation: context.account.existingObligation,
       overlay,
     },
-    candidate: statistical.candidate,
+    candidate,
+    marketPremiumPerShare,
+    premiumOfferStatus,
     analyses: statistical.analyses,
   }
 }
@@ -279,6 +328,26 @@ function reportRows(report: AnalysisReport) {
         candidateTouchEstimate: report.candidate?.result.pathTouch ?? '',
         candidateTouchLower95: report.candidate?.result.pathTouchLower95 ?? '',
         candidateTouchUpper95: report.candidate?.result.pathTouchUpper95 ?? '',
+        candidatePremiumUnavailableReason: report.candidate?.premiumUnavailableReason ?? '',
+        candidatePremiumLossEvents: report.candidate?.premium?.lossEventCount ?? '',
+        candidatePremiumEffectiveLossEvents: report.candidate?.premium?.effectiveLossEventCount ?? '',
+        candidatePremiumExpectedLoss: report.candidate?.premium?.expectedLossPerShare ?? '',
+        candidatePremiumConditionalLoss: report.candidate?.premium?.conditionalLossPerShare ?? '',
+        candidatePremiumExpectedLossLower95: report.candidate?.premium?.expectedLossInterval95[0] ?? '',
+        candidatePremiumExpectedLossUpper95: report.candidate?.premium?.expectedLossInterval95[1] ?? '',
+        candidatePremiumCvar95: report.candidate?.premium?.cvar95PerShare ?? '',
+        candidatePremiumMaximumHistoricalLoss: report.candidate?.premium?.maximumHistoricalLossPerShare ?? '',
+        candidatePremiumDaysToExpiry: report.candidate?.premium?.daysToExpiry ?? '',
+        candidatePremiumTransactionCost: report.candidate?.premium?.transactionCostPerShare ?? '',
+        candidatePremiumAnnualCapitalReturnRate: report.candidate?.premium?.annualCapitalReturnRate ?? '',
+        candidatePremiumLightTailWeight: report.candidate?.premium?.lightTailWeight ?? '',
+        candidatePremiumConservativeTailWeight: report.candidate?.premium?.conservativeTailWeight ?? '',
+        candidatePremiumStatisticalFloor: report.candidate?.premium?.statisticalFloorPerShare ?? '',
+        candidatePremiumCapitalReturnFloor: report.candidate?.premium?.capitalReturnFloorPerShare ?? '',
+        candidatePremiumLightTailFloor: report.candidate?.premium?.lightTailFloorPerShare ?? '',
+        candidatePremiumConservativeTailFloor: report.candidate?.premium?.conservativeTailFloorPerShare ?? '',
+        candidateMarketPremiumPerShare: report.marketPremiumPerShare ?? '',
+        candidatePremiumOfferStatus: report.premiumOfferStatus ?? '',
       })),
     ),
   )

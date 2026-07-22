@@ -5,6 +5,7 @@ import {
   composeAnalysisReport,
   serializeAnalysisReport,
 } from './analysis-report'
+import { DEFAULT_PREMIUM_ASSUMPTIONS } from './premium-analysis'
 
 function weeklyDataset(): HistoryDataset {
   const start = Date.parse('2023-01-01T00:00:00Z')
@@ -58,17 +59,47 @@ describe('Analysis Report', () => {
       pauseReasons: ['stale-history'],
       account: { cash: 60_000, multiple: 1.2, existingObligation: 0 },
       selectedWeeks: 1,
+      marketPremiumPerShare: 1.25,
+      premiumAssumptions: {
+        ...DEFAULT_PREMIUM_ASSUMPTIONS,
+        annualCapitalReturnRate: 0.15,
+      },
     })
     const exported = JSON.parse(serializeAnalysisReport(report, 'json').text)
     const exportedCsv = serializeAnalysisReport(report, 'csv').text
 
     expect(report.candidate?.result.grade).toBe('insufficient')
+    expect(report.candidate?.premium).toBeDefined()
     expect(exported.candidate.result.grade).toBe(report.candidate?.result.grade)
+    expect(exported.candidate.premium).toEqual(report.candidate?.premium)
+    expect(exported.candidate.premium.annualCapitalReturnRate).toBe(0.15)
+    expect(exported.marketPremiumPerShare).toBe(1.25)
+    expect(exported.premiumOfferStatus).toBe(report.premiumOfferStatus)
     expect(exported.analyses[0].lower).toEqual(report.analyses[0].lower)
     expect(exported.pauseReasons).toEqual(['stale-history'])
     expect(exported.dataset.bars).toBeUndefined()
     expect(exportedCsv).toContain('"candidateGrade"')
+    expect(exportedCsv).toContain('"candidatePremiumStatisticalFloor"')
+    expect(exportedCsv).toContain('"candidateMarketPremiumPerShare"')
     expect(exportedCsv).toContain('"insufficient"')
     expect(report.dataset.interval).toBe('weekly')
+  })
+
+  it('does not turn finite historical call losses into a Naked Call premium floor', () => {
+    const dataset = weeklyDataset()
+    const statistical = calculateStatisticalReport({
+      analysis: {
+        bars: dataset.bars,
+        anchorPrice: 100,
+        anchorDate: '2026-07-20',
+        intraday: false,
+        interval: 'weekly',
+      },
+      candidate: { weeks: 1, price: 120, side: 'upper' },
+      gradePaused: false,
+    })
+
+    expect(statistical.candidate?.premium).toBeUndefined()
+    expect(statistical.candidate?.premiumUnavailableReason).toContain('Naked Call')
   })
 })

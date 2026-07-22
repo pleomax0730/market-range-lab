@@ -92,6 +92,30 @@ _Avoid_: Guaranteed range, safe strike
 A continuous lower or upper price level evaluated for closing breach and path-touch risk without assuming that it is a listed option strike.
 _Avoid_: Recommended strike, order price
 
+**Expiration Payoff Loss**:
+For a downside Put Candidate Price, the positive amount per share by which the strike exceeds a projected Target Week Close, floored at zero.
+_Avoid_: Path-touch loss, broker margin loss, realized trade loss
+
+**CVaR95 Expiration Loss**:
+The average Expiration Payoff Loss among the worst 5% of matched historical paths.
+_Avoid_: Maximum loss, 95% probability, guaranteed tail loss
+
+**Statistical Compensation Floor**:
+The upper endpoint of the 95% Bootstrap Confidence Interval for mean Expiration Payoff Loss plus the stated per-share transaction cost.
+_Avoid_: Fair value, safe premium, recommended limit price
+
+**Capital Return Floor**:
+The Statistical Compensation Floor plus the stated annual return hurdle on the full cash-secured Put strike for the calendar days through the Target Week Close.
+_Avoid_: Broker margin return, guaranteed annual yield
+
+**Tail Compensation Floor**:
+The Capital Return Floor plus a stated fraction of the difference between CVaR95 Expiration Loss and mean Expiration Payoff Loss. The interface reports light 10% and conservative 25% variants.
+_Avoid_: Safety Grade, theoretical option value, objective risk price
+
+**Executable Premium**:
+An optional user-entered net option premium per share based on an executable bid or plausible limit fill, after estimated costs, used only to locate the quote relative to historical compensation references. It is not automatically sourced or verified as a live quote.
+_Avoid_: Last trade, ask, midpoint, guaranteed fill, evidence that a trade is worthwhile
+
 **Reference Price**:
 The Regular-Session Quote or explicit Manual Reference Price from which forward returns are converted into projected price levels.
 _Avoid_: Entry price, strike
