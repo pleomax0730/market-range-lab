@@ -26,6 +26,7 @@ import type {
   RiskGrade,
 } from "./domain/types";
 import {
+  defaultDashboardSettings,
   getDashboardSettings,
   saveDashboardSettings,
 } from "./data/datasets";
@@ -52,6 +53,7 @@ const gradeText: Record<RiskGrade, string> = {
   insufficient: "證據不足",
   scenario: "情境參考",
 };
+const dashboardDefaults = defaultDashboardSettings();
 
 function formatTime(iso: string, zone: string) {
   return new Intl.DateTimeFormat("zh-TW", {
@@ -83,14 +85,14 @@ export function App() {
   const [discontinuitiesConfirmed, setDiscontinuitiesConfirmed] =
     useState(false);
   const [messages, setMessages] = useState<string[]>([]);
-  const [horizon, setHorizon] = useState(1);
-  const [candidate, setCandidate] = useState("");
+  const [horizon, setHorizon] = useState(dashboardDefaults.horizon);
+  const [candidate, setCandidate] = useState(dashboardDefaults.candidate);
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
-    "lower",
+    dashboardDefaults.candidateSide,
   );
-  const [cash, setCash] = useState("60000");
-  const [multiple, setMultiple] = useState("1.2");
-  const [obligation, setObligation] = useState("75000");
+  const [cash, setCash] = useState(dashboardDefaults.cash);
+  const [multiple, setMultiple] = useState(dashboardDefaults.multiple);
+  const [obligation, setObligation] = useState(dashboardDefaults.obligation);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const referencePrice = useReferencePrice({
     symbol: active?.symbol,
@@ -753,7 +755,7 @@ export function App() {
                       />
                     </label>
                     <label>
-                      <span className="field-label">既有義務</span>
+                      <span className="field-label">既有義務（無則為 0）</span>
                       <Input
                         className="num"
                         type="number"

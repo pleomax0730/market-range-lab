@@ -61,6 +61,17 @@ export type DashboardSettings = {
   horizon: number
 }
 
+export function defaultDashboardSettings(): DashboardSettings {
+  return {
+    cash: '60000',
+    multiple: '1.2',
+    obligation: '0',
+    candidate: '',
+    candidateSide: 'lower',
+    horizon: 1,
+  }
+}
+
 export async function saveDashboardSettings(settings: DashboardSettings) {
   return (await database).put('settings', settings, 'dashboardSettings')
 }

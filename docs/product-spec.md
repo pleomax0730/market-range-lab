@@ -101,6 +101,8 @@ Assignment Budget = Cash * Assignment Budget Multiple
 Available Assignment Budget = Assignment Budget - Existing Assignment Obligation
 ```
 
+Existing Assignment Obligation defaults to zero. The application never assumes that a user already holds an option position; only a user-entered and locally saved obligation reduces the available budget.
+
 Premium is ignored conservatively. Whole 100-share contract feasibility may be evaluated internally for a Candidate Price, but the UI reports only budget coverage and never recommends a quantity. A negative available budget is displayed as over-committed. Any zero-equity floor is labeled theoretical and is not presented as a broker liquidation price.
 
 ## Dashboard Workflow
