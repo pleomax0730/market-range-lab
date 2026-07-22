@@ -691,7 +691,7 @@ export function App() {
                 <div className="panel p-4">
                   <div className="mb-4 flex items-center gap-2">
                     <h2 className="text-sm font-bold">自訂價格評估</h2>
-                    <Tooltip content="自訂價格只替換候選價；參考日期、時段、週期與目標收盤日沿用目前分析。">
+                    <Tooltip content="Candidate Price（候選價）不做履約價間距取整；Reference Date、Session、Horizon 與 Target Week Close 沿用目前分析。">
                       <Info size={14} className="text-[#6B7280]" />
                     </Tooltip>
                   </div>
