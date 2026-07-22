@@ -85,11 +85,11 @@ export function DownsideDistributionChart({
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#565656]">
             <span className="inline-flex items-center gap-1.5">
-              <i className="size-2 rounded-full bg-[var(--chart-expiration)]" />
+              <i className="size-2.5 rounded-sm border border-[var(--chart-expiration)] bg-[var(--chart-expiration)]" />
               週收盤跌破
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <i className="size-2 rounded-full bg-[var(--chart-touch)]" />
+              <i className="size-2.5 rounded-sm border border-[var(--chart-touch)] bg-[var(--chart-touch)]" />
               盤中曾觸及
             </span>
           </div>

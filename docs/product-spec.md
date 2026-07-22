@@ -119,13 +119,13 @@ Premium is ignored conservatively. Whole 100-share contract feasibility may be e
 
 The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected horizon's Target Week Close. Changing a Candidate Price never silently changes that evaluation context.
 
-Analysis recomputes automatically after a fresh 30-second quote or a debounced input change. There is no primary `Run Analysis` button.
+Analysis recomputes automatically after a fresh 30-second quote or a debounced input change. There is no primary `Run Analysis` button. Candidate recalculation keeps the previous result footprint in place with an explicit updating state so downstream content does not jump.
 
 ## Interface Direction
 
 Use React, TypeScript, Tailwind, and shadcn/ui with a Ramp-inspired light, data-dense product layout. Use blue for actions, green for Conservative, blue for Safe, and red for Dangerous; Ramp lime is a limited accent and never communicates safety. Numeric values use tabular figures.
 
-The desktop-first layout targets widths of 1280px and above, remains usable on tablets, and offers summary-only mobile views. The main surface contains a compact quote/status bar, parameter sidebar, multi-horizon comparison table, selected-horizon chart, candidate evaluator, and data-quality drawer. Avoid marketing heroes, nested cards, excessive rounding, and decorative gradients.
+The desktop-first layout targets widths of 1280px and above, remains usable on tablets, and keeps critical verification metrics visible on mobile in a 2-column grid. The multi-horizon table preserves Direction and Grade context while horizontally scrolling. The main surface contains a compact quote/status bar, parameter sidebar, multi-horizon comparison table, selected-horizon chart, candidate evaluator, and data-quality drawer. Avoid marketing heroes, nested cards, excessive rounding, and decorative gradients.
 
 The primary language is Traditional Chinese. Canonical English terms appear in tooltips. Monetary values default to USD; market time is shown in ET with Taiwan time alongside it.
 

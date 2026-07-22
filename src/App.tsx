@@ -228,6 +228,7 @@ export function App() {
   );
   const {
     report,
+    staleCandidate,
     loading: analysisLoading,
     error: analysisError,
   } = useAnalysisReport({
@@ -239,6 +240,20 @@ export function App() {
   const selected = analyses[horizon - 1];
   const candidateOverlayPending = candidateSide === "lower" && Number(candidate) > 0 && analysisLoading;
   const overlay = candidateOverlayPending ? undefined : report?.account.overlay;
+  const candidateResult = Number(candidate) > 0
+    ? report?.candidate?.weeks === horizon
+      ? report.candidate
+      : analysisLoading && staleCandidate?.weeks === horizon
+        ? staleCandidate
+        : undefined
+    : undefined;
+  const candidateResultStale = candidateResult !== undefined && candidateResult === staleCandidate;
+  const candidateResultMatchesInput = Boolean(
+    candidateResult &&
+      candidateResult.side === candidateSide &&
+      candidateResult.price === Number(candidate),
+  );
+  const candidateResultPending = Boolean(candidateResultStale || (candidateResult && analysisLoading));
 
   async function handleHistoryFile(
     file: File | undefined,
@@ -370,7 +385,7 @@ export function App() {
                 />
                 <span>我已檢視並確認檔案中被偵測的異常價格不連續</span>
               </label>
-              <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#BDBDBD] bg-[#FAFAFA] text-sm hover:border-blue-600">
+              <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#BDBDBD] bg-[#FAFAFA] text-sm transition-[border-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-within:ring-2 focus-within:ring-blue-600 hover:border-blue-600">
                 <FileUp className="mb-2" size={20} />
                 <span>選擇 Daily CSV</span>
                 <input
@@ -383,7 +398,7 @@ export function App() {
                   }
                 />
               </label>
-              <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#D8D8D8] bg-white text-xs font-semibold hover:bg-[#F8F8F8]">
+              <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#D8D8D8] bg-white text-xs font-semibold transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-within:ring-2 focus-within:ring-blue-600 hover:bg-[#F8F8F8]">
                 <FileUp size={14} />
                 <span>選擇 Weekly CSV</span>
                 <input
@@ -437,7 +452,7 @@ export function App() {
                   className={`flex items-center gap-2 rounded border p-2 ${dataset.id === activeId ? "border-blue-500 bg-blue-50" : "border-[#E5E5E5]"}`}
                 >
                   <button
-                    className="min-w-0 flex-1 text-left"
+                    className="min-w-0 flex-1 rounded text-left outline-none transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-600"
                     onClick={() => void historyCatalog.activate(dataset.id)}
                   >
                     <strong className="flex items-center gap-2 text-sm">
@@ -447,7 +462,7 @@ export function App() {
                       </span>
                     </strong>
                     <span className="block truncate text-[11px] text-[#6B7280]">
-                      {dataset.bars.length.toLocaleString()} {dataset.interval === "daily" ? "sessions" : "weeks"}
+                      <span className="num">{dataset.bars.length.toLocaleString()}</span> {dataset.interval === "daily" ? "sessions" : "weeks"}
                     </span>
                   </button>
                   <Button
@@ -467,7 +482,7 @@ export function App() {
         <div className="min-w-0 space-y-4">
           {!historyCatalog.ready ? (
             <section className="panel flex min-h-80 items-center justify-center p-8 text-sm text-[#6B7280]">
-              <RefreshCw size={16} className="mr-2 animate-spin" />讀取本機資料集
+              <RefreshCw size={16} className="mr-2 animate-spin-fast" />讀取本機資料集
             </section>
           ) : !active ? (
             <section className="panel flex min-h-80 flex-col items-center justify-center p-8 text-center">
@@ -506,7 +521,7 @@ export function App() {
                           : "已收盤"}
                     </span>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6B7280]">
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6B7280] num">
                     <span>
                       ET{" "}
                       {manualOverride
@@ -577,7 +592,7 @@ export function App() {
                     >
                       <RefreshCw
                         size={16}
-                        className={reference.loading ? "animate-spin" : undefined}
+                        className={reference.loading ? "animate-spin-fast" : undefined}
                       />
                     </Button>
                   </Tooltip>
@@ -618,7 +633,7 @@ export function App() {
               <section className="panel p-4">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">目標週收盤區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin" />統計更新中</span>}</div>
+                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">目標週收盤區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin-fast" />統計更新中</span>}</div>
                     <p className="mt-1 text-xs text-[#6B7280]">
                       {active.interval === "weekly"
                         ? "Weekly-only：以每週 OHLC 建立連續週期路徑；週收盤與週內 High/Low 可分析，但無法還原逐日先後順序。"
@@ -659,9 +674,10 @@ export function App() {
                     stale={gradePaused}
                     anchorPrice={anchorPrice}
                     candidate={
-                      report?.candidate?.side === "lower" &&
-                      report.candidate.weeks === horizon
-                        ? report.candidate.result.price
+                      candidateResultMatchesInput &&
+                      !candidateResultStale &&
+                      candidateResult?.side === "lower"
+                        ? candidateResult.result.price
                         : undefined
                     }
                   />
@@ -706,17 +722,21 @@ export function App() {
                       <option value="upper">上檔 / Call</option>
                     </select>
                   </div>
-                  {report?.candidate && report.candidate.weeks === horizon && (
-                    <CandidateResult
-                      candidate={report.candidate}
-                      anchorPrice={anchorPrice}
-                    />
-                  )}
-                  {Number(candidate) > 0 && !report?.candidate && analysisLoading && (
-                    <p className="mt-4 flex items-center gap-1 border-t border-[#E5E5E5] pt-4 text-xs text-[#6B7280]">
-                      <RefreshCw size={12} className="animate-spin" />候選價統計更新中
-                    </p>
-                  )}
+                  <div className={`relative ${Number(candidate) > 0 && analysisLoading ? "min-h-[180px]" : ""}`} aria-busy={analysisLoading}>
+                    {candidateResult && (
+                      <div className={candidateResultPending ? "opacity-50 transition-opacity duration-150" : undefined}>
+                        <CandidateResult
+                          candidate={candidateResult}
+                          anchorPrice={anchorPrice}
+                        />
+                      </div>
+                    )}
+                    {Number(candidate) > 0 && analysisLoading && (
+                      <div className="absolute inset-0 flex items-start justify-center bg-white/70 pt-6 text-xs text-[#6B7280]">
+                        <span className="flex items-center gap-1"><RefreshCw size={12} className="animate-spin-fast" />候選價統計更新中</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="panel p-4">
                   <h2 className="text-sm font-bold">指派預算疊合</h2>
@@ -864,11 +884,19 @@ function RiskTable({
         stale={stale}
       />
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
+        <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-[110px]" />
+          <col className="w-[150px]" />
+          <col />
+          <col />
+          <col />
+          <col />
+        </colgroup>
         <thead>
           <tr className="border-y border-[#E5E5E5] bg-[#FAFAFA] text-left text-xs text-[#6B7280]">
-            <th className="px-3 py-2.5">方向</th>
-            <th className="px-3 py-2.5">分級</th>
+            <th scope="col" className="table-sticky-first table-sticky-header px-3 py-2.5">方向</th>
+            <th scope="col" className="table-sticky-second table-sticky-header px-3 py-2.5">分級</th>
             <th className="px-3 py-2.5 text-right">價格</th>
             <th className="px-3 py-2.5 text-right">幅度</th>
             <th className="px-3 py-2.5 text-right"><TermHelp explanation="Expiration breach estimate / 95% confidence interval：估計週收盤穿越該價格的機率，中括號是考慮有限歷史樣本後的 95% 信賴區間。">到期估計 / 95% CI</TermHelp></th>
@@ -881,10 +909,10 @@ function RiskTable({
               key={`${index}-${row.price}`}
               className="border-b border-[#EFEFEF]"
             >
-              <td className="px-3 py-3 font-medium">
+              <td className="table-sticky-first px-3 py-3 font-medium">
                 {index < 2 ? "下檔 / Put" : "上檔 / Call"}
               </td>
-              <td className="px-3 py-3">
+              <td className="table-sticky-second px-3 py-3">
                 {row.meetsTarget === false ? (
                   <span className="risk-insufficient inline-flex rounded px-2 py-1 text-xs font-bold">
                     門檻不可達
@@ -905,18 +933,18 @@ function RiskTable({
                 {percent.format(row.expirationBreach)} / [
                 {percent.format(row.expirationLower95)},{" "}
                 {percent.format(row.expirationUpper95)}]
-                <small className="block text-[#6B7280]">
+                <small className="num block text-[#6B7280]">
                   {Math.round(row.expirationBreach * analysis.sampleSize)} /{" "}
-                  {analysis.sampleSize} events
+                  <span className="num">{analysis.sampleSize} events</span>
                 </small>
               </td>
               <td className="num px-3 py-3 text-right">
                 {percent.format(row.pathTouch)} / [
                 {percent.format(row.pathTouchLower95)},{" "}
                 {percent.format(row.pathTouchUpper95)}]
-                <small className="block text-[#6B7280]">
+                <small className="num block text-[#6B7280]">
                   {Math.round(row.pathTouch * analysis.sampleSize)} /{" "}
-                  {analysis.sampleSize} events
+                  <span className="num">{analysis.sampleSize} events</span>
                 </small>
               </td>
             </tr>
@@ -924,10 +952,10 @@ function RiskTable({
         </tbody>
         </table>
       </div>
-      <div className="desktop-detail mt-4 grid grid-cols-2 gap-3 text-xs text-[#565656] lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[#565656] lg:grid-cols-4">
         <div>
           <span className="block text-[#6B7280]">目標收盤</span>
-          <strong>{analysis.targetDate}</strong>
+          <strong className="num">{analysis.targetDate}</strong>
         </div>
         <div>
           <span className="block text-[#6B7280]"><TermHelp explanation="N 是符合目前星期位置與期間的歷史路徑數；N_eff 是再考慮路徑重疊與序列自相關後的有效獨立樣本數。">N / N_eff</TermHelp></span>
@@ -948,7 +976,7 @@ function RiskTable({
           </strong>
         </div>
       </div>
-      <div className="desktop-detail mt-3 grid grid-cols-2 gap-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656] lg:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656] lg:grid-cols-4">
         <div>
           <span className="block text-[#6B7280]">路徑 1% bootstrap CI</span>
           <strong className="num">
@@ -1019,7 +1047,7 @@ function CandidateResult({
           {percent.format(result.expirationLower95)},{" "}
           {percent.format(result.expirationUpper95)}]
         </strong>
-        <small className="block text-[#6B7280]">
+        <small className="num block text-[#6B7280]">
           {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
           events
         </small>
@@ -1031,7 +1059,7 @@ function CandidateResult({
           {percent.format(result.pathTouchLower95)},{" "}
           {percent.format(result.pathTouchUpper95)}]
         </strong>
-        <small className="block text-[#6B7280]">
+        <small className="num block text-[#6B7280]">
           {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
         </small>
       </div>

@@ -95,6 +95,11 @@ export function useAnalysisReport({
     return { ...response.report, candidate: undefined }
   }, [reportKey, response, scopeKey])
 
+  const staleCandidate = useMemo(() => {
+    if (!response?.report || response.scopeKey !== scopeKey || response.reportKey === reportKey) return undefined
+    return response.report.candidate
+  }, [reportKey, response, scopeKey])
+
   const report = useMemo(
     () => statistical && context
       ? composeAnalysisReport(statistical, context)
@@ -104,6 +109,7 @@ export function useAnalysisReport({
 
   return {
     report,
+    staleCandidate,
     loading: Boolean(input && reportKey && response?.reportKey !== reportKey) || workerLoading,
     error,
   }
