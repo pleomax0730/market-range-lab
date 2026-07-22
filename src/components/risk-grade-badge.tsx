@@ -21,7 +21,8 @@ export function RiskGradeBadge({ grade }: { grade: RiskGrade }) {
   return (
     <Tooltip content={explanations[grade]}>
       <span
-        className={`inline-flex min-h-7 min-w-28 items-center justify-center rounded px-2 py-1 text-center text-xs font-bold risk-${grade}`}
+        tabIndex={0}
+        className={`inline-flex min-h-7 min-w-28 cursor-help items-center justify-center rounded px-2 py-1 text-center text-xs font-bold outline-none focus-visible:ring-2 focus-visible:ring-blue-600 risk-${grade}`}
       >
         {labels[grade]}
       </span>
