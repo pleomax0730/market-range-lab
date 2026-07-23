@@ -63,6 +63,7 @@ export function DownsideDistributionChart({
   const yMaximum = Math.max(0.0125, Math.min(0.1, maximumObserved * 1.18));
   const minimumPrice = data[0]?.price ?? 0;
   const maximumPrice = data.at(-1)?.price ?? anchorPrice;
+  const priceRange = Math.max(0, maximumPrice - minimumPrice);
   const visibleCandidate =
     Number.isFinite(candidate) &&
     candidate! > 0 &&
@@ -70,6 +71,19 @@ export function DownsideDistributionChart({
     candidate! <= maximumPrice
       ? candidate
       : undefined;
+  const modelEstimateNearLeft =
+    priceRange > 0 &&
+    conservative.price <= minimumPrice + priceRange * 0.35;
+  const modelEstimateLabelPosition = modelEstimateNearLeft
+    ? "insideTopLeft"
+    : "insideBottomRight";
+  const candidateLabelNearLeft =
+    visibleCandidate !== undefined &&
+    priceRange > 0 &&
+    visibleCandidate <= minimumPrice + priceRange * 0.35;
+  const candidateLabelPosition = candidateLabelNearLeft
+    ? "insideTopLeft"
+    : "insideBottomLeft";
   const candidateGap =
     hasModelEstimate && Number.isFinite(candidate) && candidate! > 0
       ? candidate! - conservative.price
@@ -138,7 +152,7 @@ export function DownsideDistributionChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 12, right: 18, bottom: 8, left: 4 }}
+            margin={{ top: 16, right: 18, bottom: 16, left: 8 }}
           >
             <CartesianGrid
               stroke="var(--chart-grid)"
@@ -207,7 +221,7 @@ export function DownsideDistributionChart({
                 strokeDasharray="5 4"
                 label={{
                   value: `模型估計 ${money.format(conservative.price)}`,
-                  position: "insideBottomRight",
+                  position: modelEstimateLabelPosition,
                   fill: "var(--chart-axis)",
                   fontSize: 12,
                 }}
@@ -220,7 +234,7 @@ export function DownsideDistributionChart({
                 strokeDasharray="4 4"
                 label={{
                   value: `自訂 ${money.format(visibleCandidate)}`,
-                  position: "insideBottomLeft",
+                  position: candidateLabelPosition,
                   fill: "var(--chart-axis)",
                   fontSize: 12,
                 }}

@@ -12,7 +12,7 @@ The current version includes auditable historical compensation floors for cash-s
 
 ## Inputs
 
-- Symbol, entered explicitly and checked against Yahoo metadata.
+- Symbol, inferred from the uploaded filename (for example, `SOXL ETF Stock Price History Daily.csv`).
 - Daily CSV, preferred because it preserves session-level paths.
 - Weekly CSV, accepted as a lower-resolution canonical fallback and optionally compared with Daily History.
 - Current regular-session quote from Yahoo, or a visibly identified manual override.
@@ -22,7 +22,7 @@ The current version includes auditable historical compensation floors for cash-s
 - Annual cash-secured capital-return hurdle, persisted locally and defaulted to 10%; changing it reprices the derived floors without recomputing historical paths.
 - Optional advanced overrides for grading thresholds; every override is included in exports.
 
-For Investing.com exports, the column mapper defaults `Date`, `Price -> Close`, `Open`, `High`, `Low`, and optional `Vol.`. `Change %` is recomputed from Close values and used only as a discrepancy check.
+For Investing.com exports, the column mapper defaults `Date`, `Price -> Close`, `Open`, `High`, `Low`, and optional `Vol.`. `Change %` is recomputed from Close values and used only as a discrepancy check. The UI keeps the known source URL and OHLC attestation internally; users only choose Daily or Weekly CSV.
 
 ## Historical Data Provenance
 
@@ -32,7 +32,7 @@ The current SOXL history source is the user-downloaded Investing.com page docume
 
 The importer supports explicit column mapping, common US date formats, thousands separators, percentages, and `K/M/B` volume suffixes. It sorts accepted rows chronologically after validating them.
 
-Duplicate dates, nonpositive OHLC values, non-finite values, `High < max(Open, Close)`, and `Low > min(Open, Close)` are rejected with row-level errors. Suspected split or adjustment discontinuities require explicit confirmation; confirmed mixed-basis OHLC is rejected. Volume is optional.
+Duplicate dates, nonpositive OHLC values, non-finite values, `High < max(Open, Close)`, and `Low > min(Open, Close)` are rejected with row-level errors. Suspected split or adjustment discontinuities are surfaced as warnings in the one-step UI; confirmed mixed-basis OHLC is rejected. Volume is optional.
 
 For a Safety Grade, Daily History must extend through at least the regular session immediately preceding the Reference Price's session. Weekly-Only History must contain a weekly observation no more than two weeks behind the reference date. Older files may produce ranges with a stale-history warning but cannot produce a grade. Yahoo data does not backfill missing history.
 
@@ -170,7 +170,7 @@ The application exports JSON and CSV, not PDF. Exports include all inputs, data 
 
 - Missing or invalid required columns: block import and show row/column guidance.
 - Mixed or invalid OHLC basis: reject the dataset.
-- Suspicious adjustment discontinuity: require confirmation.
+- Suspicious adjustment discontinuity: import with a visible warning under the default attestation.
 - Stale historical file: show ranges but suppress grades.
 - Stale or failed Yahoo quote: pause automatic grading and offer manual price.
 - Unsupported symbol metadata: reject automatic mode and explain the supported universe.

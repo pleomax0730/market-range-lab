@@ -11,7 +11,7 @@ The user's current SOXL daily and weekly CSV files were downloaded manually from
 - Available page fields: Date, Price, Open, High, Low, Vol., Change %
 - Import mapping: `Price` is treated as `Close`; `Change %` is not trusted as a calculated return and is used only for reconciliation.
 
-The application does not log in to Investing.com, scrape this page, or download files automatically. The user downloads the CSV and imports it into the local application. Daily history is preferred; a weekly file can be selected as a clearly labeled lower-resolution analysis source when daily history is unavailable, or compared with a matching daily dataset.
+The application does not log in to Investing.com, scrape this page, or download files automatically. The user downloads the CSV and imports it into the local application. Daily history is preferred; a weekly file can be selected as a clearly labeled lower-resolution analysis source when daily history is unavailable, or compared with a matching daily dataset. The import UI infers the symbol from the filename and keeps the Investing.com provenance and OHLC attestation as internal defaults, so users only need to choose a CSV.
 
 Each imported dataset records this provenance separately from its contents:
 
@@ -23,6 +23,8 @@ Each imported dataset records this provenance separately from its contents:
 - first and last observation dates
 - accepted and rejected row counts
 - split-adjustment attestation and validation warnings
+
+Suspected adjustment discontinuities are imported under the default attestation and remain visible as warnings in the dashboard. The underlying importer still exposes explicit confirmation fields for programmatic callers.
 
 ## Current Reference Price
 

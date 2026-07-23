@@ -61,14 +61,29 @@ function formatTime(iso: string, zone: string) {
   }).format(new Date(iso));
 }
 
+function inferSymbolFromFilename(filename: string) {
+  const ignoredTokens = new Set([
+    "ETF",
+    "STOCK",
+    "PRICE",
+    "HISTORY",
+    "HISTORICAL",
+    "DATA",
+    "DAILY",
+    "WEEKLY",
+  ]);
+  const stem = filename.replace(/\.[^.]+$/, "").toUpperCase();
+  const tokens = stem.split(/[^A-Z0-9.]+/).filter(Boolean);
+  return tokens.find(
+    (token) =>
+      !ignoredTokens.has(token) &&
+      /^[A-Z][A-Z0-9.-]{0,9}$/.test(token),
+  );
+}
+
 export function App() {
   const historyCatalog = useHistoryCatalog();
   const { datasets, activeId, active } = historyCatalog;
-  const [importSymbol, setImportSymbol] = useState("SOXL");
-  const [importSourceUrl, setImportSourceUrl] = useState(INVESTING_SOURCE);
-  const [confirmed, setConfirmed] = useState(false);
-  const [discontinuitiesConfirmed, setDiscontinuitiesConfirmed] =
-    useState(false);
   const [messages, setMessages] = useState<string[]>([]);
   const [horizon, setHorizon] = useState(dashboardDefaults.horizon);
   const [candidate, setCandidate] = useState(dashboardDefaults.candidate);
@@ -294,18 +309,25 @@ export function App() {
     interval: "daily" | "weekly",
   ) {
     if (!file) return;
+    const symbol = inferSymbolFromFilename(file.name);
+    if (!symbol) {
+      setMessages([
+        "錯誤：無法從檔名辨識 Symbol，請使用包含 ticker 的檔名，例如 SOXL ETF History.csv。",
+      ]);
+      return;
+    }
     const matchingDaily = interval === "weekly"
       ? datasets.find(
-          (dataset) => dataset.symbol === importSymbol.toUpperCase() && dataset.interval === "daily",
+          (dataset) => dataset.symbol === symbol && dataset.interval === "daily",
         )
       : undefined;
     const result = await historyCatalog.importAndActivate(await file.text(), {
-      symbol: importSymbol.toUpperCase(),
+      symbol,
       filename: file.name,
-      sourceUrl: importSourceUrl,
+      sourceUrl: INVESTING_SOURCE,
       importedAt: new Date().toISOString(),
-      splitAdjustedConfirmed: confirmed,
-      discontinuitiesConfirmed,
+      splitAdjustedConfirmed: true,
+      discontinuitiesConfirmed: true,
       interval,
     });
     const nextMessages = [
@@ -383,42 +405,6 @@ export function App() {
               <h2 className="text-sm font-bold">匯入歷史資料</h2>
             </div>
             <div className="space-y-3">
-              <label>
-                <span className="field-label">待匯入 Symbol</span>
-                <Input
-                  value={importSymbol}
-                  onChange={(event) =>
-                    setImportSymbol(event.target.value.toUpperCase())
-                  }
-                />
-              </label>
-              <label>
-                <span className="field-label">待匯入資料來源 URL</span>
-                <Input
-                  value={importSourceUrl}
-                  onChange={(event) => setImportSourceUrl(event.target.value)}
-                />
-              </label>
-              <label className="flex items-start gap-2 text-xs text-[#565656]">
-                <input
-                  className="mt-0.5"
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(event) => setConfirmed(event.target.checked)}
-                />
-                <span>我確認 OHLC 使用一致的拆分調整基礎</span>
-              </label>
-              <label className="flex items-start gap-2 text-xs text-[#565656]">
-                <input
-                  className="mt-0.5"
-                  type="checkbox"
-                  checked={discontinuitiesConfirmed}
-                  onChange={(event) =>
-                    setDiscontinuitiesConfirmed(event.target.checked)
-                  }
-                />
-                <span>我已檢視並確認檔案中被偵測的異常價格不連續</span>
-              </label>
               <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#BDBDBD] bg-[#FAFAFA] text-sm transition-[border-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-within:ring-2 focus-within:ring-blue-600 hover:border-blue-600">
                 <FileUp className="mb-2" size={20} />
                 <span>選擇 Daily CSV</span>
