@@ -18,6 +18,7 @@ type WorkerResponse = {
 type UseAnalysisReportOptions = {
   input?: StatisticalReportInput
   analysisKey?: string
+  modelKey?: string
   context?: AnalysisReportContext
   debounceMs?: number
 }
@@ -34,6 +35,7 @@ function keysFor(input: StatisticalReportInput | undefined, analysisKey: string 
 export function useAnalysisReport({
   input,
   analysisKey,
+  modelKey,
   context,
   debounceMs = 250,
 }: UseAnalysisReportOptions) {
@@ -72,7 +74,7 @@ export function useAnalysisReport({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       requestIdRef.current += 1
-      if (!input || !analysisKey || !Number.isFinite(input.analysis.anchorPrice) || input.analysis.anchorPrice <= 0) {
+      if (!input || !analysisKey || !modelKey || !Number.isFinite(input.analysis.anchorPrice) || input.analysis.anchorPrice <= 0) {
         setWorkerLoading(false)
         return
       }
@@ -81,13 +83,14 @@ export function useAnalysisReport({
       workerRef.current?.postMessage({
         requestId: requestIdRef.current,
         analysisKey,
+        modelKey,
         scopeKey,
         reportKey,
         input,
       })
     }, input ? debounceMs : 0)
     return () => window.clearTimeout(timer)
-  }, [analysisKey, debounceMs, input, reportKey, scopeKey])
+  }, [analysisKey, debounceMs, input, modelKey, reportKey, scopeKey])
 
   const statistical = useMemo(() => {
     if (!response?.report || response.scopeKey !== scopeKey) return undefined

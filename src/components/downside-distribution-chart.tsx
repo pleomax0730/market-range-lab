@@ -46,11 +46,15 @@ export function DownsideDistributionChart({
     [analysis.downsideDistribution, anchorPrice],
   );
   const conservative = analysis.lower[0];
-  const hasSweetSpot =
+  const certification = analysis.conservativeCertification.lower;
+  const hasCertifiedBoundary =
     !stale &&
     analysis.weeks <= 4 &&
-    conservative.grade === "conservative" &&
-    conservative.meetsTarget !== false &&
+    certification.meetsTarget !== false &&
+    Number.isFinite(certification.price);
+  const hasModelEstimate =
+    !stale &&
+    analysis.weeks <= 4 &&
     Number.isFinite(conservative.price);
   const maximumObserved = Math.max(
     0,
@@ -67,9 +71,12 @@ export function DownsideDistributionChart({
       ? candidate
       : undefined;
   const candidateGap =
-    hasSweetSpot && Number.isFinite(candidate) && candidate! > 0
+    hasModelEstimate && Number.isFinite(candidate) && candidate! > 0
       ? candidate! - conservative.price
       : undefined;
+  const sweetSpotExplanation = conservative.meetsTarget
+    ? `保守模型估計同時通過單側 95% 認證。估計本身仍來自波動調整後的 0.5% 到期尾部、1% 盤中尾部、bootstrap 與有效 EVT 中較不利者。`
+    : `保守模型估計：以波動調整後的 0.5% 到期尾部、1% 盤中尾部、bootstrap 與有效 EVT 中較不利者決定。它提供決策區間，但目前 N_eff=${analysis.effectiveSampleSize} 的單側 95% 證據沒有在此價格完成認證。`;
 
   if (!data.length) return null;
 
@@ -96,8 +103,8 @@ export function DownsideDistributionChart({
         </div>
         <div className="text-right">
           <span className="block text-xs text-[#6B7280]">
-            <TermHelp explanation="保守 Sweet spot 解的是：在到期風險 95% 上限不超過 0.5%、盤中觸及風險 95% 上限不超過 1% 的條件下，找最高的連續價格。它是統計風險約束解，不包含即時權利金、價差與流動性。">
-              保守 Sweet spot
+            <TermHelp explanation={sweetSpotExplanation}>
+              保守模型估計
             </TermHelp>
           </span>
           <strong className="num text-lg">
@@ -105,10 +112,13 @@ export function DownsideDistributionChart({
               ? "分級暫停"
               : analysis.weeks > 4
                 ? "情境不分級"
-                : conservative.meetsTarget === false
-                  ? "門檻不可達"
-                  : money.format(conservative.price)}
+                : money.format(conservative.price)}
           </strong>
+          {!stale && analysis.weeks <= 4 && (
+            <small className="block text-[#6B7280]">
+              單側 95% 認證 {hasCertifiedBoundary ? money.format(certification.price) : "不可達"}
+            </small>
+          )}
           {candidateGap !== undefined && (
             <small className="block text-[#6B7280]">
               自訂 {money.format(candidate!)} · {Math.abs(candidateGap) < 0.005
@@ -123,7 +133,7 @@ export function DownsideDistributionChart({
       <div
         className="h-[280px] w-full"
         role="img"
-        aria-label={`下檔價格累積分布。保守最高合格價為${hasSweetSpot ? money.format(conservative.price) : "目前不可用"}。`}
+        aria-label={`下檔價格累積分布。保守模型估計為${hasModelEstimate ? money.format(conservative.price) : "目前不可用"}。`}
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
@@ -167,23 +177,37 @@ export function DownsideDistributionChart({
                 fontSize: 12,
               }}
             />
-            {hasSweetSpot && (
+            {hasCertifiedBoundary && (
               <ReferenceArea
                 x1={minimumPrice}
-                x2={conservative.price}
+                x2={certification.price}
                 fill="var(--chart-conservative)"
                 fillOpacity={0.08}
                 strokeOpacity={0}
               />
             )}
-            {hasSweetSpot && (
+            {hasCertifiedBoundary && (
+              <ReferenceLine
+                x={certification.price}
+                stroke="var(--chart-conservative)"
+                strokeWidth={2}
+                label={{
+                  value: `95% 認證 ${money.format(certification.price)}`,
+                  position: "insideTopRight",
+                  fill: "var(--chart-axis)",
+                  fontSize: 12,
+                }}
+              />
+            )}
+            {hasModelEstimate && (!hasCertifiedBoundary || Math.abs(conservative.price - certification.price) >= 0.005) && (
               <ReferenceLine
                 x={conservative.price}
                 stroke="var(--chart-conservative)"
                 strokeWidth={2}
+                strokeDasharray="5 4"
                 label={{
-                  value: `保守上限 ${money.format(conservative.price)}`,
-                  position: "insideTopRight",
+                  value: `模型估計 ${money.format(conservative.price)}`,
+                  position: "insideBottomRight",
                   fill: "var(--chart-axis)",
                   fontSize: 12,
                 }}
@@ -224,7 +248,7 @@ export function DownsideDistributionChart({
         </ResponsiveContainer>
       </div>
       <p className="mt-2 text-xs text-[#6B7280]">
-        綠色區是通過保守門檻的連續價格範圍；實際下單需選擇不高於邊界的可交易履約價。曲線顯示歷史估計，邊界仍以 95% 信賴上限判定。
+        虛線是保守模型估計；綠色區與實線是通過單側 95% 證據門檻的價格。曲線採完整歷史與目前波動調整後路徑中較不利者。
       </p>
     </figure>
   );

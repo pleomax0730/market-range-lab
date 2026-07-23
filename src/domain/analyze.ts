@@ -1,7 +1,21 @@
 import { differenceInCalendarDays, getDay, parseISO } from 'date-fns'
 import { isFinalRegularSessionOfWeek, targetWeekClose } from './market-calendar'
-import { buildDownsideDistribution, candidateForThreshold, quantile, type HistoricalPath } from './statistics'
-import type { HorizonAnalysis, PriceBar } from './types'
+import { GRADE_THRESHOLDS } from './model'
+import {
+  buildDownsideDistribution,
+  candidateForThreshold,
+  evaluateCandidate,
+  quantile,
+  type HistoricalPath,
+} from './statistics'
+import type {
+  BacktestResult,
+  HorizonAnalysis,
+  HorizonBacktest,
+  ModelBoundaryEstimate,
+  PriceBar,
+  VolatilityAdjustment,
+} from './types'
 
 export type AnalysisInput = {
   bars: PriceBar[]
@@ -11,7 +25,60 @@ export type AnalysisInput = {
   interval?: 'daily' | 'weekly'
 }
 
-function extractWeeklyMatchedPaths(bars: PriceBar[], weeks: number, intraday: boolean): HistoricalPath[] {
+type VolatilityProfile = Array<number | undefined>
+type ModeledPathSet = {
+  raw: HistoricalPath[]
+  lower: HistoricalPath[]
+  upper: HistoricalPath[]
+  volatility: VolatilityAdjustment
+}
+
+const DAILY_VOLATILITY_WINDOW = 20
+const WEEKLY_VOLATILITY_WINDOW = 12
+const MINIMUM_VOLATILITY_SCALE = 0.5
+const MAXIMUM_VOLATILITY_SCALE = 2
+const MINIMUM_BACKTEST_TRAINING_PATHS = 500
+
+function standardDeviation(values: number[]) {
+  if (values.length < 2) return undefined
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1)
+  return variance > 0 && Number.isFinite(variance) ? Math.sqrt(variance) : undefined
+}
+
+function buildVolatilityProfile(bars: PriceBar[], interval: 'daily' | 'weekly'): VolatilityProfile {
+  const window = interval === 'daily' ? DAILY_VOLATILITY_WINDOW : WEEKLY_VOLATILITY_WINDOW
+  const returns = bars.map((bar, index) => index === 0 || bars[index - 1].close <= 0 || bar.close <= 0
+    ? undefined
+    : Math.log(bar.close / bars[index - 1].close))
+  return bars.map((_, index) => {
+    if (index < window) return undefined
+    const sample = returns.slice(index - window + 1, index + 1).filter((value): value is number => value !== undefined)
+    return sample.length === window ? standardDeviation(sample) : undefined
+  })
+}
+
+function referenceVolatility(
+  bars: PriceBar[],
+  profile: VolatilityProfile,
+  anchorDate: string,
+  intraday: boolean,
+) {
+  let referenceIndex = -1
+  for (let index = 0; index < bars.length; index += 1) {
+    if (bars[index].date > anchorDate) break
+    referenceIndex = index
+  }
+  if (intraday && bars[referenceIndex]?.date === anchorDate) referenceIndex -= 1
+  return referenceIndex >= 0 ? profile[referenceIndex] : undefined
+}
+
+function extractWeeklyMatchedPaths(
+  bars: PriceBar[],
+  weeks: number,
+  intraday: boolean,
+  volatilityProfile: VolatilityProfile,
+): HistoricalPath[] {
   const paths: HistoricalPath[] = []
   bars.forEach((start, startIndex) => {
     const targetIndex = startIndex + weeks - (intraday ? 1 : 0)
@@ -30,19 +97,21 @@ function extractWeeklyMatchedPaths(bars: PriceBar[], weeks: number, intraday: bo
       closeReturn: target.close / base - 1,
       lowReturn: Math.min(...window.map((bar) => bar.low)) / base - 1,
       highReturn: Math.max(...window.map((bar) => bar.high)) / base - 1,
+      startVolatility: volatilityProfile[intraday ? startIndex - 1 : startIndex],
     })
   })
   return paths
 }
 
-export function extractMatchedPaths(
+function extractMatchedPathsWithProfile(
   bars: PriceBar[],
   anchorDate: string,
   weeks: number,
   intraday: boolean,
-  interval: 'daily' | 'weekly' = 'daily',
+  interval: 'daily' | 'weekly',
+  volatilityProfile: VolatilityProfile,
 ): HistoricalPath[] {
-  if (interval === 'weekly') return extractWeeklyMatchedPaths(bars, weeks, intraday)
+  if (interval === 'weekly') return extractWeeklyMatchedPaths(bars, weeks, intraday, volatilityProfile)
   const anchorWeekday = getDay(parseISO(anchorDate))
   const rollsPastCurrentWeek = !intraday && isFinalRegularSessionOfWeek(anchorDate)
   const indexByDate = new Map(bars.map((bar, index) => [bar.date, index]))
@@ -62,9 +131,120 @@ export function extractMatchedPaths(
       closeReturn: target.close / base - 1,
       lowReturn: Math.min(...window.map((bar) => bar.low)) / base - 1,
       highReturn: Math.max(...window.map((bar) => bar.high)) / base - 1,
+      startVolatility: volatilityProfile[intraday ? startIndex - 1 : startIndex],
     })
   })
   return paths
+}
+
+export function extractMatchedPaths(
+  bars: PriceBar[],
+  anchorDate: string,
+  weeks: number,
+  intraday: boolean,
+  interval: 'daily' | 'weekly' = 'daily',
+): HistoricalPath[] {
+  return extractMatchedPathsWithProfile(
+    bars,
+    anchorDate,
+    weeks,
+    intraday,
+    interval,
+    buildVolatilityProfile(bars, interval),
+  )
+}
+
+function scaleReturn(returnPct: number, scale: number) {
+  const bounded = Math.max(-0.9999, returnPct)
+  return Math.exp(Math.log1p(bounded) * scale) - 1
+}
+
+function buildAdversePathSets(
+  raw: HistoricalPath[],
+  targetVolatility: number | undefined,
+  interval: 'daily' | 'weekly',
+): ModeledPathSet {
+  if (!targetVolatility || targetVolatility <= 0) {
+    return {
+      raw,
+      lower: raw,
+      upper: raw,
+      volatility: {
+        available: false,
+        method: interval === 'daily' ? '20-session realized volatility' : '12-week realized volatility',
+        cappedPathCount: 0,
+      },
+    }
+  }
+  const scales: number[] = []
+  let cappedPathCount = 0
+  const adjusted = raw.map((path) => {
+    const rawScale = path.startVolatility && path.startVolatility > 0
+      ? targetVolatility / path.startVolatility
+      : 1
+    const scale = Math.min(MAXIMUM_VOLATILITY_SCALE, Math.max(MINIMUM_VOLATILITY_SCALE, rawScale))
+    if (scale !== rawScale) cappedPathCount += 1
+    scales.push(scale)
+    return {
+      closeReturn: scaleReturn(path.closeReturn, scale),
+      lowReturn: scaleReturn(path.lowReturn, scale),
+      highReturn: scaleReturn(path.highReturn, scale),
+      startVolatility: path.startVolatility,
+    }
+  })
+  const lower = raw.map((path, index) => ({
+    ...path,
+    closeReturn: Math.min(path.closeReturn, adjusted[index].closeReturn),
+    lowReturn: Math.min(path.lowReturn, adjusted[index].lowReturn),
+  }))
+  const upper = raw.map((path, index) => ({
+    ...path,
+    closeReturn: Math.max(path.closeReturn, adjusted[index].closeReturn),
+    highReturn: Math.max(path.highReturn, adjusted[index].highReturn),
+  }))
+  const annualization = Math.sqrt(interval === 'daily' ? 252 : 52)
+  return {
+    raw,
+    lower,
+    upper,
+    volatility: {
+      available: scales.length > 0,
+      method: interval === 'daily'
+        ? 'Full-history adverse envelope with 20-session volatility scaling'
+        : 'Full-history adverse envelope with 12-week volatility scaling',
+      targetAnnualized: targetVolatility * annualization,
+      medianScale: quantile(scales, 0.5),
+      minimumScale: scales.length ? Math.min(...scales) : undefined,
+      maximumScale: scales.length ? Math.max(...scales) : undefined,
+      cappedPathCount,
+    },
+  }
+}
+
+function modeledPathsWithProfile(
+  input: AnalysisInput,
+  weeks: number,
+  profile: VolatilityProfile,
+): ModeledPathSet {
+  const interval = input.interval ?? 'daily'
+  const raw = extractMatchedPathsWithProfile(
+    input.bars,
+    input.anchorDate,
+    weeks,
+    input.intraday,
+    interval,
+    profile,
+  )
+  return buildAdversePathSets(
+    raw,
+    referenceVolatility(input.bars, profile, input.anchorDate, input.intraday),
+    interval,
+  )
+}
+
+export function extractModeledPaths(input: AnalysisInput, weeks: number): ModeledPathSet {
+  const interval = input.interval ?? 'daily'
+  return modeledPathsWithProfile(input, weeks, buildVolatilityProfile(input.bars, interval))
 }
 
 export function estimateEffectiveSampleSize(paths: HistoricalPath[], weeks: number) {
@@ -95,24 +275,78 @@ function seededRandom(seed: number) {
   }
 }
 
-function bootstrapRangeIntervals(closes: number[], lows: number[], highs: number[], iterations = 300) {
-  if (!closes.length) {
+const rangeBootstrapWeightCache = new Map<string, Uint16Array[]>()
+
+function rangeBootstrapWeights(sampleSize: number, iterations: number) {
+  const cacheKey = `${sampleSize}:${iterations}`
+  const cached = rangeBootstrapWeightCache.get(cacheKey)
+  if (cached) return cached
+  const random = seededRandom(sampleSize * 97)
+  const block = Math.max(2, Math.round(Math.sqrt(sampleSize)))
+  const plans: Uint16Array[] = []
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const weights = new Uint16Array(sampleSize)
+    let sampled = 0
+    while (sampled < sampleSize) {
+      const start = Math.floor(random() * sampleSize)
+      for (let offset = 0; offset < block && sampled < sampleSize; offset += 1) {
+        weights[(start + offset) % sampleSize] += 1
+        sampled += 1
+      }
+    }
+    plans.push(weights)
+  }
+  rangeBootstrapWeightCache.set(cacheKey, plans)
+  return plans
+}
+
+function sortedIndices(values: number[]) {
+  return values.map((_, index) => index).sort((left, right) => values[left] - values[right])
+}
+
+function weightedQuantile(values: number[], order: number[], weights: Uint16Array, probability: number) {
+  const position = (values.length - 1) * Math.min(1, Math.max(0, probability))
+  const lowerRank = Math.floor(position)
+  const upperRank = Math.ceil(position)
+  let cumulative = 0
+  let lowerValue = values[order[0]]
+  let upperValue = lowerValue
+  let lowerFound = false
+  for (const index of order) {
+    cumulative += weights[index]
+    if (!lowerFound && cumulative > lowerRank) {
+      lowerValue = values[index]
+      lowerFound = true
+    }
+    if (cumulative > upperRank) {
+      upperValue = values[index]
+      break
+    }
+  }
+  return lowerValue + (position - lowerRank) * (upperValue - lowerValue)
+}
+
+function bootstrapRangeIntervals(
+  closeLows: number[],
+  closeHighs: number[],
+  pathLows: number[],
+  pathHighs: number[],
+  iterations = 300,
+) {
+  if (!closeLows.length) {
     const empty: [number, number] = [Number.NaN, Number.NaN]
     return { closeLowPct: empty, closeHighPct: empty, pathLowPct: empty, pathHighPct: empty }
   }
-  const random = seededRandom(closes.length * 97)
   const estimates = { closeLowPct: [] as number[], closeHighPct: [] as number[], pathLowPct: [] as number[], pathHighPct: [] as number[] }
-  const block = Math.max(2, Math.round(Math.sqrt(closes.length)))
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const indices: number[] = []
-    while (indices.length < closes.length) {
-      const start = Math.floor(random() * closes.length)
-      for (let offset = 0; offset < block && indices.length < closes.length; offset += 1) indices.push((start + offset) % closes.length)
-    }
-    estimates.closeLowPct.push(quantile(indices.map((index) => closes[index]), 0.01))
-    estimates.closeHighPct.push(quantile(indices.map((index) => closes[index]), 0.99))
-    estimates.pathLowPct.push(quantile(indices.map((index) => lows[index]), 0.01))
-    estimates.pathHighPct.push(quantile(indices.map((index) => highs[index]), 0.99))
+  const closeLowOrder = sortedIndices(closeLows)
+  const closeHighOrder = sortedIndices(closeHighs)
+  const pathLowOrder = sortedIndices(pathLows)
+  const pathHighOrder = sortedIndices(pathHighs)
+  for (const weights of rangeBootstrapWeights(closeLows.length, iterations)) {
+    estimates.closeLowPct.push(weightedQuantile(closeLows, closeLowOrder, weights, 0.005))
+    estimates.closeHighPct.push(weightedQuantile(closeHighs, closeHighOrder, weights, 0.995))
+    estimates.pathLowPct.push(weightedQuantile(pathLows, pathLowOrder, weights, 0.01))
+    estimates.pathHighPct.push(weightedQuantile(pathHighs, pathHighOrder, weights, 0.99))
   }
   const interval = (values: number[]): [number, number] => [quantile(values, 0.025), quantile(values, 0.975)]
   return { closeLowPct: interval(estimates.closeLowPct), closeHighPct: interval(estimates.closeHighPct), pathLowPct: interval(estimates.pathLowPct), pathHighPct: interval(estimates.pathHighPct) }
@@ -131,7 +365,7 @@ function fitGpd(exceedances: number[]) {
   return { shape, scale }
 }
 
-export function estimateEvtStress(values: number[], side: 'lower' | 'upper'): EvtResult {
+export function estimateEvtStress(values: number[], side: 'lower' | 'upper', targetProbability = 0.01): EvtResult {
   if (values.length < 300) return { diagnostics: 'Unavailable: fewer than 300 paths.' }
   const losses = values.map((value) => side === 'lower' ? -value : value).filter((value) => value > 0).sort((a, b) => a - b)
   if (losses.length < 100) return { diagnostics: 'Unavailable: fewer than 100 adverse observations.' }
@@ -149,46 +383,266 @@ export function estimateEvtStress(values: number[], side: 'lower' | 'upper'): Ev
   }, 0)
   if (ksDistance > 1.36 / Math.sqrt(ordered.length)) return { diagnostics: 'Unavailable: goodness-of-fit diagnostic failed.' }
   const exceedanceRate = exceedances.length / values.length
-  const tailProbability = 0.01 / exceedanceRate
-  if (tailProbability <= 0 || tailProbability >= 1) return { diagnostics: 'Unavailable: the fitted tail does not reach the unconditional 1% level.' }
+  const tailProbability = targetProbability / exceedanceRate
+  if (tailProbability <= 0 || tailProbability >= 1) return { diagnostics: 'Unavailable: the fitted tail does not reach the requested level.' }
   const { shape, scale } = fit
   const extreme = Math.abs(shape) < 1e-6 ? threshold - scale * Math.log(tailProbability) : threshold + (scale / shape) * (tailProbability ** -shape - 1)
-  return { stressPct: side === 'lower' ? -extreme : extreme, diagnostics: `Valid GPD fit: threshold=${threshold.toFixed(4)}, exceedances=${exceedances.length}, shape=${shape.toFixed(3)}, KS=${ksDistance.toFixed(3)}.` }
+  return { stressPct: side === 'lower' ? -extreme : extreme, diagnostics: `Valid GPD fit: probability=${targetProbability.toFixed(3)}, threshold=${threshold.toFixed(4)}, exceedances=${exceedances.length}, shape=${shape.toFixed(3)}, KS=${ksDistance.toFixed(3)}.` }
+}
+
+function combineEvtResults(primary: EvtResult, secondary: EvtResult, side: 'lower' | 'upper') {
+  const available = [primary.stressPct, secondary.stressPct].filter((value): value is number => value !== undefined)
+  return {
+    stressPct: available.length
+      ? (side === 'lower' ? Math.min(...available) : Math.max(...available))
+      : undefined,
+    diagnostics: `Close: ${primary.diagnostics} Path: ${secondary.diagnostics}`,
+  }
+}
+
+function conservativeEstimate(
+  anchorPrice: number,
+  side: 'lower' | 'upper',
+  bootstrap: ReturnType<typeof bootstrapRangeIntervals>,
+  evtStressPct: number | undefined,
+): ModelBoundaryEstimate {
+  const base = side === 'lower'
+    ? Math.min(bootstrap.closeLowPct[0], bootstrap.pathLowPct[0])
+    : Math.max(bootstrap.closeHighPct[1], bootstrap.pathHighPct[1])
+  const combined = evtStressPct === undefined || !Number.isFinite(evtStressPct)
+    ? base
+    : side === 'lower' ? Math.min(base, evtStressPct) : Math.max(base, evtStressPct)
+  const returnPct = Number.isFinite(combined) ? Math.max(-0.9999, combined) : 0
+  return {
+    price: Math.max(0.01, anchorPrice * (1 + returnPct)),
+    returnPct,
+    evtUsed: evtStressPct !== undefined && Number.isFinite(evtStressPct) && evtStressPct === combined,
+  }
+}
+
+function createBacktestResult(): BacktestResult {
+  return { predictions: 0, expirationBreaches: 0, expirationRate: 0, pathTouchBreaches: 0, pathTouchRate: 0 }
+}
+
+function finalizeBacktestResult(result: BacktestResult): BacktestResult {
+  return {
+    ...result,
+    expirationRate: result.predictions ? result.expirationBreaches / result.predictions : 0,
+    pathTouchRate: result.predictions ? result.pathTouchBreaches / result.predictions : 0,
+  }
+}
+
+function sortedQuantile(values: Float64Array, probability: number) {
+  if (!values.length) return Number.NaN
+  const position = (values.length - 1) * Math.min(1, Math.max(0, probability))
+  const lower = Math.floor(position)
+  const fraction = position - lower
+  const upper = values[lower + 1]
+  return upper === undefined ? values[lower] : values[lower] + fraction * (upper - values[lower])
+}
+
+function backtestBoundaries(rawPaths: HistoricalPath[], trainingLength: number, targetVolatility: number | undefined) {
+  const lowerCloses = new Float64Array(trainingLength)
+  const lowerLows = new Float64Array(trainingLength)
+  const upperCloses = new Float64Array(trainingLength)
+  const upperHighs = new Float64Array(trainingLength)
+  for (let index = 0; index < trainingLength; index += 1) {
+    const path = rawPaths[index]
+    const rawScale = targetVolatility && path.startVolatility && path.startVolatility > 0
+      ? targetVolatility / path.startVolatility
+      : 1
+    const scale = Math.min(MAXIMUM_VOLATILITY_SCALE, Math.max(MINIMUM_VOLATILITY_SCALE, rawScale))
+    const adjustedClose = scaleReturn(path.closeReturn, scale)
+    lowerCloses[index] = Math.min(path.closeReturn, adjustedClose)
+    upperCloses[index] = Math.max(path.closeReturn, adjustedClose)
+    lowerLows[index] = Math.min(path.lowReturn, scaleReturn(path.lowReturn, scale))
+    upperHighs[index] = Math.max(path.highReturn, scaleReturn(path.highReturn, scale))
+  }
+  lowerCloses.sort()
+  lowerLows.sort()
+  upperCloses.sort()
+  upperHighs.sort()
+  const boundary = (side: 'lower' | 'upper', grade: 'conservative' | 'safe') => {
+    const limits = GRADE_THRESHOLDS[grade]
+    return side === 'lower'
+      ? Math.min(
+          sortedQuantile(lowerCloses, limits.expirationUpper95),
+          sortedQuantile(lowerLows, limits.pathTouchUpper95),
+        )
+      : Math.max(
+          sortedQuantile(upperCloses, 1 - limits.expirationUpper95),
+          sortedQuantile(upperHighs, 1 - limits.pathTouchUpper95),
+        )
+  }
+  return {
+    lower: {
+      conservative: boundary('lower', 'conservative'),
+      safe: boundary('lower', 'safe'),
+    },
+    upper: {
+      conservative: boundary('upper', 'conservative'),
+      safe: boundary('upper', 'safe'),
+    },
+  }
+}
+
+function updateBacktestResult(result: BacktestResult, actual: HistoricalPath, side: 'lower' | 'upper', boundary: number) {
+  result.predictions += 1
+  if (side === 'lower') {
+    if (actual.closeReturn <= boundary) result.expirationBreaches += 1
+    if (actual.lowReturn <= boundary) result.pathTouchBreaches += 1
+  } else {
+    if (actual.closeReturn >= boundary) result.expirationBreaches += 1
+    if (actual.highReturn >= boundary) result.pathTouchBreaches += 1
+  }
+}
+
+export function backtestHistoricalPaths(rawPaths: HistoricalPath[], weeks: number, interval: 'daily' | 'weekly'): HorizonBacktest | undefined {
+  if (weeks > 4 || rawPaths.length <= MINIMUM_BACKTEST_TRAINING_PATHS) return undefined
+  const result = {
+    lower: { conservative: createBacktestResult(), safe: createBacktestResult() },
+    upper: { conservative: createBacktestResult(), safe: createBacktestResult() },
+  }
+  for (let index = MINIMUM_BACKTEST_TRAINING_PATHS; index < rawPaths.length; index += 1) {
+    const actual = rawPaths[index]
+    const boundaries = backtestBoundaries(rawPaths, index, actual.startVolatility)
+    for (const grade of ['conservative', 'safe'] as const) {
+      updateBacktestResult(result.lower[grade], actual, 'lower', boundaries.lower[grade])
+      updateBacktestResult(result.upper[grade], actual, 'upper', boundaries.upper[grade])
+    }
+  }
+  return {
+    method: `Expanding-window out-of-sample quantile backtest with ${interval} volatility scaling`,
+    minimumTrainingPaths: MINIMUM_BACKTEST_TRAINING_PATHS,
+    lower: {
+      conservative: finalizeBacktestResult(result.lower.conservative),
+      safe: finalizeBacktestResult(result.lower.safe),
+    },
+    upper: {
+      conservative: finalizeBacktestResult(result.upper.conservative),
+      safe: finalizeBacktestResult(result.upper.safe),
+    },
+  }
+}
+
+function evaluateConservativeEstimate(
+  estimate: ModelBoundaryEstimate,
+  anchorPrice: number,
+  side: 'lower' | 'upper',
+  paths: HistoricalPath[],
+  effectiveSampleSize: number,
+  weeks: number,
+) {
+  const result = evaluateCandidate(anchorPrice, estimate.price, side, paths, effectiveSampleSize, weeks)
+  const threshold = GRADE_THRESHOLDS.conservative
+  const certified = weeks <= 4 &&
+    effectiveSampleSize >= 100 &&
+    result.expirationRiskUpper95 <= threshold.expirationUpper95 &&
+    result.pathTouchRiskUpper95 <= threshold.pathTouchUpper95
+  return {
+    ...result,
+    requestedGrade: 'conservative' as const,
+    meetsTarget: certified,
+    basis: certified ? 'certified' as const : 'model-estimate' as const,
+  }
 }
 
 export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
+  const interval = input.interval ?? 'daily'
+  const profile = buildVolatilityProfile(input.bars, interval)
   return Array.from({ length: 8 }, (_, index) => {
     const weeks = index + 1
-    const paths = extractMatchedPaths(input.bars, input.anchorDate, weeks, input.intraday, input.interval)
-    const effectiveSampleSize = estimateEffectiveSampleSize(paths, weeks)
-    const closes = paths.map((path) => path.closeReturn)
-    const lows = paths.map((path) => path.lowReturn)
-    const highs = paths.map((path) => path.highReturn)
-    const lowerEvt = estimateEvtStress(lows, 'lower')
-    const upperEvt = estimateEvtStress(highs, 'upper')
-    const bootstrap = bootstrapRangeIntervals(closes, lows, highs)
-    const lowerConservative = candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'conservative')
-    const lowerSafe = candidateForThreshold(input.anchorPrice, 'lower', paths, effectiveSampleSize, weeks, 'safe')
+    const modeled = modeledPathsWithProfile(input, weeks, profile)
+    const effectiveSampleSize = estimateEffectiveSampleSize(modeled.raw, weeks)
+    const rawCloses = modeled.raw.map((path) => path.closeReturn)
+    const rawLows = modeled.raw.map((path) => path.lowReturn)
+    const rawHighs = modeled.raw.map((path) => path.highReturn)
+    const lowerCloses = modeled.lower.map((path) => path.closeReturn)
+    const lowerLows = modeled.lower.map((path) => path.lowReturn)
+    const upperCloses = modeled.upper.map((path) => path.closeReturn)
+    const upperHighs = modeled.upper.map((path) => path.highReturn)
+    const lowerEvt = combineEvtResults(
+      estimateEvtStress(lowerCloses, 'lower', 0.005),
+      estimateEvtStress(lowerLows, 'lower', 0.01),
+      'lower',
+    )
+    const upperEvt = combineEvtResults(
+      estimateEvtStress(upperCloses, 'upper', 0.005),
+      estimateEvtStress(upperHighs, 'upper', 0.01),
+      'upper',
+    )
+    const rawBootstrap = bootstrapRangeIntervals(rawCloses, rawCloses, rawLows, rawHighs)
+    const modeledBootstrap = bootstrapRangeIntervals(lowerCloses, upperCloses, lowerLows, upperHighs)
+    const lowerEstimate = conservativeEstimate(input.anchorPrice, 'lower', modeledBootstrap, lowerEvt.stressPct)
+    const upperEstimate = conservativeEstimate(input.anchorPrice, 'upper', modeledBootstrap, upperEvt.stressPct)
+    const rawLowerConservative = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'conservative')
+    const rawUpperConservative = candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'conservative')
+    const lowerConservative = evaluateConservativeEstimate(lowerEstimate, input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks)
+    const upperConservative = evaluateConservativeEstimate(upperEstimate, input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks)
+    const lowerSafe = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'safe')
     const distributionMaximum = lowerSafe.meetsTarget === false
-      ? quantile(lows, 0.05)
+      ? quantile(lowerLows, 0.05)
       : lowerSafe.returnPct
     return {
       weeks,
       targetDate: targetWeekClose(input.anchorDate, weeks, !input.intraday && isFinalRegularSessionOfWeek(input.anchorDate)),
-      sampleSize: paths.length,
+      sampleSize: modeled.raw.length,
       effectiveSampleSize,
-      lower: [
-        lowerConservative,
-        lowerSafe,
-      ],
+      lower: [lowerConservative, lowerSafe],
       upper: [
-        candidateForThreshold(input.anchorPrice, 'upper', paths, effectiveSampleSize, weeks, 'conservative'),
-        candidateForThreshold(input.anchorPrice, 'upper', paths, effectiveSampleSize, weeks, 'safe'),
+        upperConservative,
+        candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'safe'),
       ],
-      downsideDistribution: buildDownsideDistribution(paths, distributionMaximum),
-      empirical: { closeLowPct: quantile(closes, 0.01), closeHighPct: quantile(closes, 0.99), pathLowPct: quantile(lows, 0.01), pathHighPct: quantile(highs, 0.99), closeMinPct: closes.length ? Math.min(...closes) : Number.NaN, closeMaxPct: closes.length ? Math.max(...closes) : Number.NaN, pathMinPct: lows.length ? Math.min(...lows) : Number.NaN, pathMaxPct: highs.length ? Math.max(...highs) : Number.NaN },
-      bootstrap,
-      evt: { lowerStressPct: lowerEvt.stressPct, upperStressPct: upperEvt.stressPct, lowerDiagnostics: lowerEvt.diagnostics, upperDiagnostics: upperEvt.diagnostics, note: 'EVT is a separate tail stress estimate, not a probability grade.' },
+      downsideDistribution: buildDownsideDistribution(modeled.lower, distributionMaximum, 180, lowerEstimate.returnPct),
+      conservativeEstimate: { lower: lowerEstimate, upper: upperEstimate },
+      conservativeCertification: {
+        lower: rawLowerConservative,
+        upper: rawUpperConservative,
+      },
+      volatilityAdjustment: modeled.volatility,
+      backtest: backtestHistoricalPaths(modeled.raw, weeks, interval),
+      empirical: {
+        closeLowPct: quantile(rawCloses, 0.005),
+        closeHighPct: quantile(rawCloses, 0.995),
+        pathLowPct: quantile(rawLows, 0.01),
+        pathHighPct: quantile(rawHighs, 0.99),
+        closeMinPct: rawCloses.length ? Math.min(...rawCloses) : Number.NaN,
+        closeMaxPct: rawCloses.length ? Math.max(...rawCloses) : Number.NaN,
+        pathMinPct: rawLows.length ? Math.min(...rawLows) : Number.NaN,
+        pathMaxPct: rawHighs.length ? Math.max(...rawHighs) : Number.NaN,
+      },
+      bootstrap: rawBootstrap,
+      evt: {
+        lowerStressPct: lowerEvt.stressPct,
+        upperStressPct: upperEvt.stressPct,
+        lowerDiagnostics: lowerEvt.diagnostics,
+        upperDiagnostics: upperEvt.diagnostics,
+        note: 'EVT is a diagnostic-gated tail stress estimate aligned to 0.5% close and 1% path probabilities; it does not certify a grade.',
+      },
     }
   })
+}
+
+export function repriceAnalyses(analyses: HorizonAnalysis[], anchorPrice: number): HorizonAnalysis[] {
+  const repriceRisk = (risk: HorizonAnalysis['lower'][number]) => ({
+    ...risk,
+    price: anchorPrice * (1 + risk.returnPct),
+  })
+  const repriceEstimate = (estimate: ModelBoundaryEstimate): ModelBoundaryEstimate => ({
+    ...estimate,
+    price: anchorPrice * (1 + estimate.returnPct),
+  })
+  return analyses.map((analysis) => ({
+    ...analysis,
+    lower: analysis.lower.map(repriceRisk),
+    upper: analysis.upper.map(repriceRisk),
+    conservativeEstimate: {
+      lower: repriceEstimate(analysis.conservativeEstimate.lower),
+      upper: repriceEstimate(analysis.conservativeEstimate.upper),
+    },
+    conservativeCertification: {
+      lower: repriceRisk(analysis.conservativeCertification.lower),
+      upper: repriceRisk(analysis.conservativeCertification.upper),
+    },
+  }))
 }

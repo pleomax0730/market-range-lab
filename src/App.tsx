@@ -15,7 +15,7 @@ import {
 } from "./domain/analysis-report";
 import { previousRegularSession } from "./domain/market-calendar";
 import { reconcileWeekly } from "./domain/reconcile-weekly";
-import { MODEL_VERSION } from "./domain/model";
+import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
 import { DEFAULT_PREMIUM_ASSUMPTIONS } from "./domain/premium-analysis";
 import { useAnalysisReport } from "./hooks/use-analysis-report";
 import { useHistoryCatalog } from "./hooks/use-history-catalog";
@@ -194,16 +194,16 @@ export function App() {
     } : undefined,
     [analysisInput, candidate, candidateSide, gradePaused, horizon],
   );
-  const analysisKey = active && analysisInput
+  const modelKey = active && analysisInput
     ? [
         active.id,
         active.sha256,
-        anchorPrice,
         anchorDate,
         analysisIntraday,
         active.interval,
       ].join("|")
     : undefined;
+  const analysisKey = modelKey ? `${modelKey}|price=${anchorPrice}` : undefined;
   const reportContext = useMemo(
     () => active ? {
       dataset: active,
@@ -267,6 +267,7 @@ export function App() {
   } = useAnalysisReport({
     input: reportInput,
     analysisKey,
+    modelKey,
     context: reportContext,
   });
   const analyses = report?.analyses ?? [];
@@ -881,8 +882,8 @@ export function App() {
                       模型邊界 · v{MODEL_VERSION}
                     </strong>
                     <p className="mt-1">
-                      全歷史等權、{active.interval === "daily" ? "同週內位置配對" : "連續週線配對"}、連續區塊 bootstrap。EVT
-                      只是尾部壓力，不參與分級，也不假設正態分配。此工具不是投資建議。
+                      全歷史等權、{active.interval === "daily" ? "同週內位置配對" : "連續週線配對"}、當前波動較不利包絡、連續區塊 bootstrap、單側 95% 分級上限與 expanding-window 樣本外回測。EVT
+                      只作尾部壓力，不直接認證分級，也不假設正態分配。此工具不是投資建議。
                     </p>
                   </div>
                 </div>
@@ -936,8 +937,8 @@ function RiskTable({
             <th scope="col" className="table-sticky-second table-sticky-header px-3 py-2.5">分級</th>
             <th className="px-3 py-2.5 text-right">價格</th>
             <th className="px-3 py-2.5 text-right">幅度</th>
-            <th className="px-3 py-2.5 text-right"><TermHelp explanation="Expiration breach estimate / 95% confidence interval：估計週收盤穿越該價格的機率，中括號是考慮有限歷史樣本後的 95% 信賴區間。">到期估計 / 95% CI</TermHelp></th>
-            <th className="px-3 py-2.5 text-right"><TermHelp explanation="Path-touch estimate / 95% confidence interval：不只看週收盤，而是統計期間內盤中曾觸及該價格的機率。">觸及估計 / 95% CI</TermHelp></th>
+            <th className="px-3 py-2.5 text-right"><TermHelp explanation="上方是歷史到期跌破比例與雙側 95% 信賴區間；下方的『分級上限』是只檢查風險是否低於門檻所使用的單側 95% 上限。">到期估計 / 雙側 95% CI</TermHelp></th>
+            <th className="px-3 py-2.5 text-right"><TermHelp explanation="上方是期間內盤中曾觸及的比例與雙側 95% 信賴區間；下方的『分級上限』是單側 95% 風險上限。">觸及估計 / 雙側 95% CI</TermHelp></th>
           </tr>
         </thead>
         <tbody>
@@ -950,19 +951,37 @@ function RiskTable({
                 {index < 2 ? "下檔 / Put" : "上檔 / Call"}
               </td>
               <td className="table-sticky-second px-3 py-3">
-                {row.meetsTarget === false ? (
-                  <span className="risk-insufficient inline-flex rounded px-2 py-1 text-xs font-bold">
-                    門檻不可達
-                  </span>
+                {row.basis === "model-estimate" ? (
+                  <TermHelp
+                    explanation={`保守模型估計：價格由全歷史路徑、當前波動較不利包絡、0.5% 到期尾部、1% 盤中尾部及通過診斷的 EVT 壓力共同估計；但目前 N_eff=${analysis.effectiveSampleSize} 的單側 95% 證據仍不足以認證保守門檻。此價格本身的分級是${row.grade === "safe" ? "符合安全門檻" : row.grade === "dangerous" ? "超出安全門檻" : "證據不足"}。`}
+                  >
+                    <span className="risk-insufficient inline-flex rounded px-2 py-1 text-xs font-bold">
+                      {row.grade === "safe"
+                        ? "保守估計 · 安全認證"
+                        : row.grade === "dangerous"
+                          ? "保守估計 · 超出安全"
+                          : "保守估計 · 未認證"}
+                    </span>
+                  </TermHelp>
+                ) : row.meetsTarget === false ? (
+                  <TermHelp
+                    explanation={`門檻不可達：目前有效樣本 N_eff=${analysis.effectiveSampleSize} 下，找不到任何${index < 2 ? "下檔" : "上檔"}價格能同時滿足${row.requestedGrade === "conservative" ? "保守" : "安全"}門檻（到期單側 95% 上限 ≤ ${percent.format(GRADE_THRESHOLDS[row.requestedGrade ?? "conservative"].expirationUpper95)}、觸及單側 95% 上限 ≤ ${percent.format(GRADE_THRESHOLDS[row.requestedGrade ?? "conservative"].pathTouchUpper95)}）。`}
+                  >
+                    <span className="risk-insufficient inline-flex rounded px-2 py-1 text-xs font-bold">
+                      門檻不可達
+                    </span>
+                  </TermHelp>
                 ) : (
                   <RiskGradeBadge grade={row.grade} />
                 )}
               </td>
               <td className="num px-3 py-3 text-right font-bold">
-                {row.meetsTarget === false ? "—" : money.format(row.price)}
+                {row.meetsTarget === false && row.basis !== "model-estimate"
+                  ? "—"
+                  : money.format(row.price)}
               </td>
               <td className="num px-3 py-3 text-right">
-                {row.meetsTarget === false
+                {row.meetsTarget === false && row.basis !== "model-estimate"
                   ? "—"
                   : percent.format(row.returnPct)}
               </td>
@@ -974,6 +993,9 @@ function RiskTable({
                   {Math.round(row.expirationBreach * analysis.sampleSize)} /{" "}
                   <span className="num">{analysis.sampleSize} events</span>
                 </small>
+                <small className="num block text-[#6B7280]">
+                  分級上限 {percent.format(row.expirationRiskUpper95)}
+                </small>
               </td>
               <td className="num px-3 py-3 text-right">
                 {percent.format(row.pathTouch)} / [
@@ -982,6 +1004,9 @@ function RiskTable({
                 <small className="num block text-[#6B7280]">
                   {Math.round(row.pathTouch * analysis.sampleSize)} /{" "}
                   <span className="num">{analysis.sampleSize} events</span>
+                </small>
+                <small className="num block text-[#6B7280]">
+                  分級上限 {percent.format(row.pathTouchRiskUpper95)}
                 </small>
               </td>
             </tr>
@@ -1048,12 +1073,124 @@ function RiskTable({
           </strong>
         </div>
       </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656] lg:grid-cols-4">
+        <div>
+          <span className="block text-[#6B7280]"><TermHelp explanation="即使樣本不足以完成保守認證，仍以波動調整後的 0.5% 到期尾部、1% 盤中尾部、bootstrap 下緣與有效 EVT 壓力取較不利值。它是模型估計，不是保證。">模型保守估計 Put / Call</TermHelp></span>
+          <strong className="num">
+            {money.format(analysis.conservativeEstimate.lower.price)} /{" "}
+            {money.format(analysis.conservativeEstimate.upper.price)}
+          </strong>
+        </div>
+        <div>
+          <span className="block text-[#6B7280]"><TermHelp explanation="由匯入價格資料最近 20 個交易日（週線資料則為 12 週）的收盤報酬估算，僅用來把完整歷史路徑調整至目前波動狀態。">當前年化歷史波動</TermHelp></span>
+          <strong className="num">
+            {analysis.volatilityAdjustment.targetAnnualized === undefined
+              ? "不可用"
+              : percent.format(analysis.volatilityAdjustment.targetAnnualized)}
+          </strong>
+        </div>
+        <div>
+          <span className="block text-[#6B7280]"><TermHelp explanation="目前波動除以每條歷史路徑起點波動的中位倍率。模型同時保留原始完整歷史與調整後路徑，取較不利者；倍率限制在 0.5–2 倍。">波動調整倍率中位數</TermHelp></span>
+          <strong className="num">
+            {analysis.volatilityAdjustment.medianScale === undefined
+              ? "不可用"
+              : `${analysis.volatilityAdjustment.medianScale.toFixed(2)}×`}
+          </strong>
+          <small className="num block text-[#6B7280]">
+            封頂 {analysis.volatilityAdjustment.cappedPathCount} / {analysis.sampleSize}
+          </small>
+        </div>
+        <div>
+          <span className="block text-[#6B7280]"><TermHelp explanation="在單側 95% 風險上限同時符合到期 0.5% 與盤中 1% 時，顯示可被有限歷史證據認證的最高 Put 價或最低 Call 價。它通常比模型保守估計更遠。">95% 認證 Put / Call</TermHelp></span>
+          <strong className="num">
+            {analysis.conservativeCertification.lower.meetsTarget === false
+              ? "不可達"
+              : money.format(analysis.conservativeCertification.lower.price)}{" / "}
+            {analysis.conservativeCertification.upper.meetsTarget === false
+              ? "不可達"
+              : money.format(analysis.conservativeCertification.upper.price)}
+          </strong>
+        </div>
+      </div>
+      <BacktestSummary analysis={analysis} />
       {analysis.weeks > 4 && (
         <p className="mt-3 text-xs text-[#6B7280]">
           5–8 週只是情境分析，不顯示門檻決策等級。
         </p>
       )}
     </div>
+  );
+}
+
+function BacktestSummary({ analysis }: { analysis: HorizonAnalysis }) {
+  if (analysis.weeks > 4) return null;
+  if (!analysis.backtest) {
+    return (
+      <div className="mt-4 border-t border-[#EFEFEF] pt-3 text-xs text-[#6B7280]">
+        <TermHelp explanation="樣本外回測每次只能使用該歷史日期以前的路徑。至少需要 500 條訓練路徑，否則 0.5% 尾部幾乎沒有可供校準的事件。">
+          樣本外回測
+        </TermHelp>{" "}
+        尚無足夠路徑（需要超過 500 條）。
+      </div>
+    );
+  }
+  const entries = [
+    { side: "lower" as const, label: "下檔 / Put", grade: "conservative" as const, gradeLabel: "保守" },
+    { side: "lower" as const, label: "下檔 / Put", grade: "safe" as const, gradeLabel: "安全" },
+    { side: "upper" as const, label: "上檔 / Call", grade: "safe" as const, gradeLabel: "安全" },
+    { side: "upper" as const, label: "上檔 / Call", grade: "conservative" as const, gradeLabel: "保守" },
+  ];
+  return (
+    <section className="mt-4 border-t border-[#EFEFEF] pt-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="text-xs font-bold">
+          <TermHelp explanation="Expanding-window 樣本外回測：在每個歷史時點，只用更早的至少 500 條路徑估計界線，再檢查下一條真實路徑。這可發現模型在不同年代是否失準，但不保證未來。">
+            歷史樣本外回測
+          </TermHelp>
+        </h4>
+        <span className="text-xs text-[#6B7280]">不使用未來資料 · 波動調整分位數</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[660px] border-collapse text-xs">
+          <thead>
+            <tr className="border-y border-[#EFEFEF] bg-[#FAFAFA] text-left text-[#6B7280]">
+              <th className="px-3 py-2">方向</th>
+              <th className="px-3 py-2">門檻</th>
+              <th className="px-3 py-2 text-right">樣本外預測</th>
+              <th className="px-3 py-2 text-right">到期實際跌破／突破</th>
+              <th className="px-3 py-2 text-right">盤中實際觸及</th>
+              <th className="px-3 py-2 text-right">歷史結果</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => {
+              const result = analysis.backtest![entry.side][entry.grade];
+              const threshold = GRADE_THRESHOLDS[entry.grade];
+              const met = result.expirationRate <= threshold.expirationUpper95 &&
+                result.pathTouchRate <= threshold.pathTouchUpper95;
+              return (
+                <tr key={`${entry.side}-${entry.grade}`} className="border-b border-[#EFEFEF]">
+                  <td className="px-3 py-2 font-medium">{entry.label}</td>
+                  <td className="px-3 py-2">{entry.gradeLabel}</td>
+                  <td className="num px-3 py-2 text-right">{result.predictions}</td>
+                  <td className="num px-3 py-2 text-right">
+                    {percent.format(result.expirationRate)} · {result.expirationBreaches}/{result.predictions}
+                  </td>
+                  <td className="num px-3 py-2 text-right">
+                    {percent.format(result.pathTouchRate)} · {result.pathTouchBreaches}/{result.predictions}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <span className={`${met ? "risk-conservative" : "risk-dangerous"} inline-flex rounded px-2 py-1 font-bold`}>
+                      {met ? "符合歷史目標" : "歷史超標"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1086,7 +1223,7 @@ function CandidateResult({
         </strong>
       </div>
       <div>
-        <span className="field-label"><TermHelp explanation="到期估計是目標週收盤穿越候選價的歷史比例；95% CI 反映有限樣本造成的不確定性。">到期估計 / 95% CI</TermHelp></span>
+        <span className="field-label"><TermHelp explanation="到期估計是目標週收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.expirationBreach)} / [
           {percent.format(result.expirationLower95)},{" "}
@@ -1096,9 +1233,12 @@ function CandidateResult({
           {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
           events
         </small>
+        <small className="num block text-[#6B7280]">
+          分級用單側上限 {percent.format(result.expirationRiskUpper95)}
+        </small>
       </div>
       <div>
-        <span className="field-label"><TermHelp explanation="盤中觸及會檢查整條價格路徑的最高或最低點，因此通常高於只看週收盤的到期穿越機率。">盤中觸及估計 / 95% CI</TermHelp></span>
+        <span className="field-label"><TermHelp explanation="盤中觸及會檢查整條價格路徑的最高或最低點，因此通常高於只看週收盤的到期穿越機率；中括號是雙側 95% CI。">盤中觸及估計 / 雙側 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.pathTouch)} / [
           {percent.format(result.pathTouchLower95)},{" "}
@@ -1106,6 +1246,9 @@ function CandidateResult({
         </strong>
         <small className="num block text-[#6B7280]">
           {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
+        </small>
+        <small className="num block text-[#6B7280]">
+          分級用單側上限 {percent.format(result.pathTouchRiskUpper95)}
         </small>
       </div>
       <PremiumAnalysisPanel

@@ -1,4 +1,4 @@
-import { analyzeHistory, extractMatchedPaths, type AnalysisInput } from './analyze'
+import { analyzeHistory, extractModeledPaths, type AnalysisInput } from './analyze'
 import { assignmentOverlay } from './assignment'
 import { applyGradePause } from './export-analysis'
 import { GRADE_THRESHOLDS, MODEL_VERSION } from './model'
@@ -124,18 +124,16 @@ export function calculateStatisticalReport(
     : undefined
   let candidate: CandidateAnalysis | undefined
   if (input.candidate && candidateAnalysis) {
-    const paths = extractMatchedPaths(
-      input.analysis.bars,
-      input.analysis.anchorDate,
-      input.candidate.weeks,
-      input.analysis.intraday,
-      input.analysis.interval,
-    )
+    const modeledPaths = extractModeledPaths(input.analysis, input.candidate.weeks)
+    const paths = modeledPaths.raw
+    const riskPaths = input.candidate.side === 'lower'
+      ? modeledPaths.lower
+      : modeledPaths.upper
     const result = evaluateCandidate(
       input.analysis.anchorPrice,
       input.candidate.price,
       input.candidate.side,
-      paths,
+      riskPaths,
       candidateAnalysis.effectiveSampleSize,
       input.candidate.weeks,
     )
@@ -303,11 +301,55 @@ function reportRows(report: AnalysisReport) {
         expirationEstimate: risk.expirationBreach,
         expirationLower95: risk.expirationLower95,
         expirationUpper95: risk.expirationUpper95,
+        expirationRiskUpper95: risk.expirationRiskUpper95,
         touchEstimate: risk.pathTouch,
         touchLower95: risk.pathTouchLower95,
         touchUpper95: risk.pathTouchUpper95,
+        touchRiskUpper95: risk.pathTouchRiskUpper95,
+        riskBasis: risk.basis ?? '',
+        requestedGrade: risk.requestedGrade ?? '',
+        gradeTargetMet: risk.meetsTarget === undefined ? '' : String(risk.meetsTarget),
         sampleSize: analysis.sampleSize,
         effectiveSampleSize: analysis.effectiveSampleSize,
+        modelConservativeEstimatePrice: side === 'lower'
+          ? analysis.conservativeEstimate.lower.price
+          : analysis.conservativeEstimate.upper.price,
+        modelConservativeEstimateReturnPct: side === 'lower'
+          ? analysis.conservativeEstimate.lower.returnPct
+          : analysis.conservativeEstimate.upper.returnPct,
+        modelConservativeEstimateUsedEvt: String(side === 'lower'
+          ? analysis.conservativeEstimate.lower.evtUsed
+          : analysis.conservativeEstimate.upper.evtUsed),
+        certifiedConservativePrice: side === 'lower'
+          ? (analysis.conservativeCertification.lower.meetsTarget === false ? '' : analysis.conservativeCertification.lower.price)
+          : (analysis.conservativeCertification.upper.meetsTarget === false ? '' : analysis.conservativeCertification.upper.price),
+        certifiedConservativeReturnPct: side === 'lower'
+          ? (analysis.conservativeCertification.lower.meetsTarget === false ? '' : analysis.conservativeCertification.lower.returnPct)
+          : (analysis.conservativeCertification.upper.meetsTarget === false ? '' : analysis.conservativeCertification.upper.returnPct),
+        volatilityAdjustmentAvailable: String(analysis.volatilityAdjustment.available),
+        volatilityAdjustmentMethod: analysis.volatilityAdjustment.method,
+        currentAnnualizedVolatility: analysis.volatilityAdjustment.targetAnnualized ?? '',
+        medianVolatilityScale: analysis.volatilityAdjustment.medianScale ?? '',
+        minimumVolatilityScale: analysis.volatilityAdjustment.minimumScale ?? '',
+        maximumVolatilityScale: analysis.volatilityAdjustment.maximumScale ?? '',
+        cappedVolatilityPathCount: analysis.volatilityAdjustment.cappedPathCount,
+        backtestMethod: analysis.backtest?.method ?? '',
+        backtestMinimumTrainingPaths: analysis.backtest?.minimumTrainingPaths ?? '',
+        backtestPredictions: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].predictions ?? '')
+          : '',
+        backtestExpirationBreaches: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].expirationBreaches ?? '')
+          : '',
+        backtestExpirationRate: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].expirationRate ?? '')
+          : '',
+        backtestTouchBreaches: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].pathTouchBreaches ?? '')
+          : '',
+        backtestTouchRate: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].pathTouchRate ?? '')
+          : '',
         pathMinPct: analysis.empirical.pathMinPct,
         pathMaxPct: analysis.empirical.pathMaxPct,
         evtStressPct: side === 'lower'
@@ -325,9 +367,11 @@ function reportRows(report: AnalysisReport) {
         candidateExpirationEstimate: report.candidate?.result.expirationBreach ?? '',
         candidateExpirationLower95: report.candidate?.result.expirationLower95 ?? '',
         candidateExpirationUpper95: report.candidate?.result.expirationUpper95 ?? '',
+        candidateExpirationRiskUpper95: report.candidate?.result.expirationRiskUpper95 ?? '',
         candidateTouchEstimate: report.candidate?.result.pathTouch ?? '',
         candidateTouchLower95: report.candidate?.result.pathTouchLower95 ?? '',
         candidateTouchUpper95: report.candidate?.result.pathTouchUpper95 ?? '',
+        candidateTouchRiskUpper95: report.candidate?.result.pathTouchRiskUpper95 ?? '',
         candidatePremiumUnavailableReason: report.candidate?.premiumUnavailableReason ?? '',
         candidatePremiumLossEvents: report.candidate?.premium?.lossEventCount ?? '',
         candidatePremiumEffectiveLossEvents: report.candidate?.premium?.effectiveLossEventCount ?? '',

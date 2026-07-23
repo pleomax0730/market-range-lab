@@ -49,12 +49,52 @@ export type RiskSide = {
   expirationBreach: number
   expirationLower95: number
   expirationUpper95: number
+  expirationRiskUpper95: number
   pathTouch: number
   pathTouchLower95: number
   pathTouchUpper95: number
+  pathTouchRiskUpper95: number
   grade: RiskGrade
   requestedGrade?: 'conservative' | 'safe'
   meetsTarget?: boolean
+  basis?: 'certified' | 'model-estimate'
+}
+
+export type ModelBoundaryEstimate = {
+  price: number
+  returnPct: number
+  evtUsed: boolean
+}
+
+export type VolatilityAdjustment = {
+  available: boolean
+  method: string
+  targetAnnualized?: number
+  medianScale?: number
+  minimumScale?: number
+  maximumScale?: number
+  cappedPathCount: number
+}
+
+export type BacktestResult = {
+  predictions: number
+  expirationBreaches: number
+  expirationRate: number
+  pathTouchBreaches: number
+  pathTouchRate: number
+}
+
+export type HorizonBacktest = {
+  method: string
+  minimumTrainingPaths: number
+  lower: {
+    conservative: BacktestResult
+    safe: BacktestResult
+  }
+  upper: {
+    conservative: BacktestResult
+    safe: BacktestResult
+  }
 }
 
 export type DownsideDistributionPoint = {
@@ -71,6 +111,16 @@ export type HorizonAnalysis = {
   lower: RiskSide[]
   upper: RiskSide[]
   downsideDistribution: DownsideDistributionPoint[]
+  conservativeEstimate: {
+    lower: ModelBoundaryEstimate
+    upper: ModelBoundaryEstimate
+  }
+  conservativeCertification: {
+    lower: RiskSide
+    upper: RiskSide
+  }
+  volatilityAdjustment: VolatilityAdjustment
+  backtest?: HorizonBacktest
   empirical: {
     closeLowPct: number
     closeHighPct: number

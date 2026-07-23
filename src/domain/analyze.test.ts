@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateEffectiveSampleSize, extractMatchedPaths } from './analyze'
+import { analyzeHistory, backtestHistoricalPaths, estimateEffectiveSampleSize, extractMatchedPaths, extractModeledPaths, repriceAnalyses } from './analyze'
 
 describe('extractMatchedPaths', () => {
   it('rolls a closed Friday start into the following target week', () => {
@@ -65,5 +65,61 @@ describe('extractMatchedPaths', () => {
   it('does not treat perfectly dependent paths as independent evidence', () => {
     const paths = Array.from({ length: 200 }, () => ({ closeReturn: 0.1, lowReturn: -0.1, highReturn: 0.2 }))
     expect(estimateEffectiveSampleSize(paths, 1)).toBe(1)
+  })
+
+  it('walks forward without using future paths in the training window', () => {
+    const training = Array.from({ length: 500 }, () => ({
+      closeReturn: 0,
+      lowReturn: -0.01,
+      highReturn: 0.01,
+      startVolatility: 0.02,
+    }))
+    const tests = Array.from({ length: 5 }, () => ({
+      closeReturn: -0.1,
+      lowReturn: -0.12,
+      highReturn: 0.01,
+      startVolatility: 0.02,
+    }))
+    const result = backtestHistoricalPaths([...training, ...tests], 1, 'daily')
+    expect(result?.lower.conservative.predictions).toBe(5)
+    expect(result?.lower.conservative.expirationBreaches).toBe(5)
+    expect(result?.lower.conservative.pathTouchBreaches).toBe(5)
+  })
+
+  it('keeps full-history stress while widening paths for elevated current volatility', () => {
+    const bars = Array.from({ length: 40 }, (_, index) => {
+      const date = new Date(Date.UTC(2025, 0, 5 + index * 7)).toISOString().slice(0, 10)
+      const close = index < 28
+        ? 100 * (index % 2 ? 1.01 : 1)
+        : 100 * (index % 2 ? 1.2 : 0.8)
+      return { date, open: close, high: close * 1.02, low: close * 0.98, close }
+    })
+    const modeled = extractModeledPaths({
+      bars,
+      anchorPrice: bars.at(-1)!.close,
+      anchorDate: bars.at(-1)!.date,
+      intraday: false,
+      interval: 'weekly',
+    }, 1)
+    expect(modeled.volatility.available).toBe(true)
+    expect(modeled.volatility.maximumScale).toBe(2)
+    expect(modeled.volatility.cappedPathCount).toBeGreaterThan(0)
+    expect(modeled.lower.some((path, index) => path.lowReturn < modeled.raw[index].lowReturn)).toBe(true)
+    expect(modeled.upper.some((path, index) => path.highReturn > modeled.raw[index].highReturn)).toBe(true)
+  })
+
+  it('reprices cached return-based analysis without changing its statistical evidence', () => {
+    const bars = [
+      { date: '2026-06-28', open: 98, high: 102, low: 95, close: 100 },
+      { date: '2026-07-05', open: 99, high: 105, low: 80, close: 90 },
+      { date: '2026-07-12', open: 91, high: 110, low: 85, close: 108 },
+    ]
+    const original = analyzeHistory({ bars, anchorPrice: 100, anchorDate: '2026-07-20', intraday: false, interval: 'weekly' })
+    const repriced = repriceAnalyses(original, 200)
+    expect(repriced[0].lower[0].price).toBeCloseTo(200 * (1 + original[0].lower[0].returnPct))
+    expect(repriced[0].conservativeCertification.lower.price).toBeCloseTo(200 * (1 + original[0].conservativeCertification.lower.returnPct))
+    expect(repriced[0].sampleSize).toBe(original[0].sampleSize)
+    expect(repriced[0].lower[0].expirationRiskUpper95).toBe(original[0].lower[0].expirationRiskUpper95)
+    expect(original[0].lower[0].price).not.toBe(repriced[0].lower[0].price)
   })
 })

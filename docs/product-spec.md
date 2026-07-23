@@ -62,7 +62,9 @@ After the regular close, the result is a `Closed-Session Analysis` anchored to t
 
 The sole analysis window is the full validated active dataset. Every eligible daily week-position-matched path or contiguous weekly path has equal weight regardless of date.
 
-Primary ranges and breach rates are empirical. Contiguous-block bootstrap provides 95% confidence intervals while preserving serial dependence. EVT may provide a separate stress estimate only when fit diagnostics pass; it cannot replace an observed extreme or assign a Safety Grade. Normal-distribution assumptions are not used.
+Primary ranges and breach rates use the more adverse of each equal-weight full-history path and the same path scaled from its start-date realized volatility to the current realized-volatility state. Daily scaling uses 20 completed sessions; Weekly-Only scaling uses 12 completed weeks. Scaling is capped to 0.5x-2x, and the unscaled full-history path is always retained so a low-volatility current regime cannot erase historical stress.
+
+Contiguous-block bootstrap provides two-sided 95% confidence intervals while preserving serial dependence. Directional grade decisions instead use a one-sided 95% upper risk bound: the maximum of the one-sided block-bootstrap upper quantile and a one-sided Wilson upper bound using the effective sample size. EVT is aligned to the 0.5% expiration and 1% path tails and may provide a separate stress estimate only when fit diagnostics pass; it cannot independently certify a Safety Grade. Normal-distribution assumptions are not used.
 
 For every horizon and Candidate Price, calculate separately:
 
@@ -72,7 +74,10 @@ For every horizon and Candidate Price, calculate separately:
 - upside intraperiod high-touch probability
 - empirical range boundaries and historical extremes
 - bootstrap confidence intervals and effective independent path count
+- one-sided 95% risk upper bounds used for grading
+- current-volatility adjustment diagnostics and model Conservative Estimate
 - EVT stress estimates when valid
+- expanding-window out-of-sample calibration results when more than 500 eligible paths exist
 
 Probabilities are not added. The overall grade uses the more adverse side-specific classification.
 
@@ -91,7 +96,7 @@ Premium comparison requires at least 20 effective positive-payoff observations (
 
 ## Safety Grades
 
-Grades use 95% upper confidence bounds, not point estimates.
+Grades use directional one-sided 95% upper risk bounds, not point estimates or the upper endpoint of the displayed two-sided confidence interval.
 
 | Internal grade | UI label | Expiration breach | Path touch |
 | --- | --- | ---: | ---: |
@@ -102,6 +107,10 @@ Grades use 95% upper confidence bounds, not point estimates.
 The UI describes grades as threshold classifications. It never displays `Dangerous` as a prediction that a boundary will certainly be touched, and grade tooltips explicitly distinguish threshold failure from certainty.
 
 Fewer than 100 effective independent paths produces `Insufficient Evidence`, not a grade. Scenario Horizons are also ungraded. Advanced overrides are allowed but remain explicit in the UI and export.
+
+The UI always reports a distinctly labeled `Conservative Model Estimate` together with a separate `95% Certified Boundary`. The model estimate takes the more adverse of the volatility-adjusted 0.5% expiration quantile confidence bound, the 1% path-touch quantile confidence bound, and any diagnostics-approved EVT stress. Its badge states whether that estimated price itself passes certification; the separate certified boundary shows the most aggressive continuous price that finite evidence can certify.
+
+For one- through four-week horizons with enough history, an expanding-window backtest starts after 500 training paths. Each historical prediction may use only earlier paths, applies the volatility state known at that test date, and reports subsequent expiration breaches and path touches. Backtest results are calibration evidence rather than a guarantee or a replacement for the current confidence gate.
 
 ## Candidate Prices
 

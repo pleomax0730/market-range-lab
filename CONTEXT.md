@@ -68,6 +68,26 @@ _Avoid_: Normal-distribution forecast, simulated fact
 An uncertainty interval around an empirical estimate produced by resampling contiguous historical blocks rather than independent daily observations.
 _Avoid_: Forecast range, additional historical evidence
 
+**One-Sided Risk Upper Bound**:
+The directional 95% upper bound used to decide whether an Expiration Breach Probability or Path Touch Probability is below a grade threshold. It is the more conservative of a one-sided block-bootstrap upper quantile and a one-sided Wilson bound based on effective sample size; it is distinct from the displayed two-sided 95% confidence interval.
+_Avoid_: Two-sided interval endpoint, guaranteed maximum probability
+
+**Volatility-Adjusted Historical Path**:
+An Equal-Weight Historical Path whose log price moves are scaled by current realized volatility divided by realized volatility at the path's start. The scale is capped, and grading retains the more adverse of the adjusted and original full-history path.
+_Avoid_: Recency weighting, discarded crisis path, volatility forecast
+
+**Conservative Model Estimate**:
+A lower or upper boundary derived from volatility-adjusted 0.5% expiration and 1% path quantiles, block-bootstrap uncertainty, and diagnostics-approved EVT stress. It is always distinguished from the separate 95% Certified Boundary.
+_Avoid_: Certified Conservative Grade, guaranteed tail boundary
+
+**95% Certified Boundary**:
+The nearest continuous price whose one-sided 95% Risk Upper Bounds satisfy both Conservative thresholds. It may be materially farther from the Reference Price than the Conservative Model Estimate and may be unavailable when finite evidence is insufficient.
+_Avoid_: Model estimate, guaranteed safe price
+
+**Expanding-Window Backtest**:
+A calibration test in which each historical boundary is estimated only from earlier eligible paths before the next realized path is checked for expiration breach and path touch.
+_Avoid_: In-sample fit, future-data validation, guarantee
+
 **EVT Stress Estimate**:
 A separately identified extreme-tail extrapolation used only for stress context when its fit diagnostics are acceptable; it never replaces observed extremes or determines a Safety Grade.
 _Avoid_: Primary estimate, guaranteed worst case
@@ -177,15 +197,15 @@ A conservative classification based on the more adverse of Expiration Breach Pro
 _Avoid_: Guarantee, combined probability
 
 **Conservative Grade**:
-A Safety Grade whose 95% upper confidence bounds do not exceed 0.5% for expiration breach or 1% for path touch.
+A Safety Grade whose one-sided 95% Risk Upper Bounds do not exceed 0.5% for expiration breach or 1% for path touch.
 _Avoid_: Zero risk
 
 **Safe Grade**:
-A Safety Grade whose 95% upper confidence bounds do not exceed 2% for expiration breach or 5% for path touch, but which does not qualify as Conservative Grade.
+A Safety Grade whose one-sided 95% Risk Upper Bounds do not exceed 2% for expiration breach or 5% for path touch, but which does not qualify as Conservative Grade.
 _Avoid_: Guaranteed safe
 
 **Dangerous Grade**:
-A Safety Grade assigned when either 95% upper confidence bound exceeds the Safe Grade threshold.
+A Safety Grade assigned when either one-sided 95% Risk Upper Bound exceeds the Safe Grade threshold.
 The UI label is `超出安全門檻` because this classification does not imply that a breach or touch is certain.
 _Avoid_: Certain loss, guaranteed touch, displaying the grade as `危險`
 

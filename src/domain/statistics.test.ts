@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildDownsideDistribution, candidateForThreshold, classifyRisk, evaluateCandidate, quantile, wilsonUpper } from './statistics'
+import { ONE_SIDED_Z95 } from './model'
 
 describe('statistics primitives', () => {
   it('interpolates quantiles', () => expect(quantile([0, 10, 20, 30], 0.25)).toBe(7.5))
@@ -40,6 +41,16 @@ describe('statistics primitives', () => {
     expect(result.expirationLower95).toBe(0)
     expect(result.expirationUpper95).toBeGreaterThan(0.005)
     expect(result.grade).not.toBe('conservative')
+  })
+
+  it('uses a one-sided 95% risk bound for directional grade decisions', () => {
+    const paths = Array.from({ length: 763 }, () => ({ closeReturn: 0.05, lowReturn: -0.05, highReturn: 0.1 }))
+    const result = evaluateCandidate(100, 50, 'lower', paths, 763, 1)
+    expect(result.expirationUpper95).toBeGreaterThan(0.005)
+    expect(result.expirationRiskUpper95).toBeCloseTo(wilsonUpper(0, 763, ONE_SIDED_Z95))
+    expect(result.expirationRiskUpper95).toBeLessThan(0.005)
+    expect(result.pathTouchRiskUpper95).toBeLessThan(0.01)
+    expect(result.grade).toBe('conservative')
   })
 
   it('finds the closest passing boundary rather than the most extreme observation', () => {
