@@ -1,5 +1,4 @@
 import { analyzeHistory, extractModeledPaths, type AnalysisInput } from './analyze'
-import { assignmentOverlay } from './assignment'
 import { applyGradePause } from './export-analysis'
 import { GRADE_THRESHOLDS, MODEL_VERSION } from './model'
 import {
@@ -68,11 +67,6 @@ export type AnalysisReportContext = {
     manualSession?: 'intraday' | 'closed'
   }
   pauseReasons: string[]
-  account: {
-    cash: number
-    multiple: number
-    existingObligation: number
-  }
   selectedWeeks: number
   marketPremiumPerShare?: number
   premiumAssumptions: PremiumAssumptions
@@ -98,12 +92,6 @@ export type AnalysisReport = {
   gradePaused: boolean
   pauseReasons: string[]
   selectedWeeks: number
-  account: {
-    cash: number
-    assignmentBudgetMultiple: number
-    existingAssignmentObligation: number
-    overlay: ReturnType<typeof assignmentOverlay>
-  }
   candidate?: CandidateAnalysis
   marketPremiumPerShare?: number
   premiumOfferStatus?: PremiumOfferStatus
@@ -189,9 +177,6 @@ export function composeAnalysisReport(
   statistical: StatisticalAnalysisReport,
   context: AnalysisReportContext,
 ): AnalysisReport {
-  const selected = statistical.analyses.find(
-    (analysis) => analysis.weeks === context.selectedWeeks,
-  )
   const adjustedPremium = statistical.candidate?.premium
     ? repricePutPremiumAnalysis(
         statistical.candidate.premium,
@@ -201,15 +186,6 @@ export function composeAnalysisReport(
   const candidate = statistical.candidate
     ? { ...statistical.candidate, premium: adjustedPremium }
     : undefined
-  const putPrice = candidate?.side === 'lower'
-    ? candidate.result.price
-    : (selected?.lower[1]?.price ?? 0)
-  const overlay = assignmentOverlay(
-    context.account.cash,
-    context.account.multiple,
-    context.account.existingObligation,
-    putPrice,
-  )
   const marketPremiumPerShare = context.marketPremiumPerShare !== undefined &&
     Number.isFinite(context.marketPremiumPerShare) &&
     context.marketPremiumPerShare >= 0
@@ -234,12 +210,6 @@ export function composeAnalysisReport(
     gradePaused: statistical.gradePaused,
     pauseReasons: context.pauseReasons,
     selectedWeeks: context.selectedWeeks,
-    account: {
-      cash: context.account.cash,
-      assignmentBudgetMultiple: context.account.multiple,
-      existingAssignmentObligation: context.account.existingObligation,
-      overlay,
-    },
     candidate,
     marketPremiumPerShare,
     premiumOfferStatus,
@@ -284,14 +254,6 @@ function reportRows(report: AnalysisReport) {
         anchorPrice: report.anchorPrice,
         anchorDate: report.anchorDate,
         selectedWeeks: report.selectedWeeks,
-        cash: report.account.cash,
-        assignmentBudgetMultiple: report.account.assignmentBudgetMultiple,
-        existingAssignmentObligation: report.account.existingAssignmentObligation,
-        assignmentBudget: report.account.overlay.budget,
-        availableAssignmentBudget: report.account.overlay.available,
-        assignmentContractCost: report.account.overlay.contractCost,
-        assignmentOverlayValid: String(report.account.overlay.valid),
-        assignmentOverlayErrors: report.account.overlay.errors.join('|'),
         weeks: analysis.weeks,
         targetDate: analysis.targetDate,
         side,

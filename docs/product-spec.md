@@ -8,15 +8,14 @@ Build a local dashboard that imports split-adjusted daily or weekly price histor
 
 Supported instruments are US-listed common stocks and ETFs during regular market sessions in `America/New_York`. Cryptoassets, futures, non-US listings, and option contracts as historical datasets are excluded.
 
-The current version includes auditable historical compensation floors for cash-secured Put premiums. It excludes live option chains, theoretical option valuation, implied volatility, Greeks, broker margin, precise liquidation prices, trade quantities, order entry, IBKR integration, and public deployment.
+The current version includes auditable historical compensation floors for cash-secured Put premiums. It excludes live option chains, theoretical option valuation, implied volatility, Greeks, account assignment-budget sizing, broker margin, precise liquidation prices, trade quantities, order entry, IBKR integration, and public deployment.
 
 ## Inputs
 
-- Symbol, inferred from the uploaded filename (for example, `SOXL ETF Stock Price History Daily.csv`).
+- Symbol, inferred from the uploaded filename (for example, `SOXL ETF Stock Price History Daily.csv`); company-name or long-token matches show a confirmation field so the Yahoo ticker can be corrected before import (for example, `PALANTIR -> PLTR`).
 - Daily CSV, preferred because it preserves session-level paths.
 - Weekly CSV, accepted as a lower-resolution canonical fallback and optionally compared with Daily History.
 - Current regular-session quote from Yahoo, or a visibly identified manual override.
-- Cash balance, Assignment Budget Multiple, and Existing Assignment Obligation.
 - One selected Candidate Price for detailed evaluation, while system-generated range boundaries remain continuous prices.
 - Optional executable Put premium per share for comparison with historical compensation floors; it is entered manually and is not treated as a live quote.
 - Annual cash-secured capital-return hurdle, persisted locally and defaulted to 10%; changing it reprices the derived floors without recomputing historical paths.
@@ -116,29 +115,16 @@ For one- through four-week horizons with enough history, an expanding-window bac
 
 Model boundaries are continuous prices and are displayed to the symbol's supported precision. They are not rounded to assumed option strike intervals. A dedicated input evaluates any user-entered price such as `$100` or `$105` against every selected horizon.
 
-Downside levels support put-oriented analysis; upside levels support call-oriented analysis. The account overlay applies only to downside put assignment. Upside call levels are statistical and never labeled capital-safe.
+Downside levels support put-oriented analysis; upside levels support call-oriented analysis. Upside call levels are statistical and never labeled capital-safe. Account sizing and assignment-budget feasibility are intentionally outside this dashboard's decision surface.
 
 Downside Put candidates additionally show historical premium compensation floors. These are not option-chain quotes, Black-Scholes values, implied probabilities, or claims that a trade is worthwhile. Upper Call candidates explicitly suppress the premium floor because Naked Call loss is unbounded.
-
-## Assignment Budget Overlay
-
-The overlay calculates:
-
-```text
-Assignment Budget = Cash * Assignment Budget Multiple
-Available Assignment Budget = Assignment Budget - Existing Assignment Obligation
-```
-
-Existing Assignment Obligation defaults to zero. The application never assumes that a user already holds an option position; only a user-entered and locally saved obligation reduces the available budget.
-
-Premium is ignored conservatively. Whole 100-share contract feasibility may be evaluated internally for a Candidate Price, but the UI reports only budget coverage and never recommends a quantity. A negative available budget is displayed as over-committed. Any zero-equity floor is labeled theoretical and is not presented as a broker liquidation price.
 
 ## Dashboard Workflow
 
 1. Choose or add an Active Symbol.
 2. Import a Daily CSV when available, or a Weekly CSV for lower-resolution analysis; optionally compare matching daily and weekly histories.
 3. Review data provenance, quality errors, adjustment warnings, and freshness.
-4. Enter cash, assignment multiple, existing obligation, and optional Candidate Price.
+4. Enter an optional Candidate Price and choose Put or Call.
 5. Review the one-to-eight-week summary table.
 6. Select a horizon for detailed distribution, range, touch, close, confidence, and stress views.
 7. For a downside Put candidate, review the four premium compensation floors and optionally compare a manually entered executable premium.
@@ -158,7 +144,7 @@ The primary language is Traditional Chinese. Canonical English terms appear in t
 
 ## Local Persistence And Privacy
 
-Multiple symbol datasets are stored in IndexedDB, with one Active Symbol at a time. CSV contents, account inputs, and results remain local; only the symbol is sent to Yahoo for quote lookup. Users can clear one symbol or all local data.
+Multiple symbol datasets are stored in IndexedDB, with one Active Symbol at a time. CSV contents and results remain local; only the symbol is sent to Yahoo for quote lookup. Users can clear one symbol or all local data.
 
 Each stored dataset includes source metadata, original filename, SHA-256 hash, date range, accepted/rejected counts, import time, and model version.
 

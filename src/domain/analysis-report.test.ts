@@ -57,7 +57,6 @@ describe('Analysis Report', () => {
         paused: false,
       },
       pauseReasons: ['stale-history'],
-      account: { cash: 60_000, multiple: 1.2, existingObligation: 0 },
       selectedWeeks: 1,
       marketPremiumPerShare: 1.25,
       premiumAssumptions: {

@@ -20,7 +20,7 @@ export function EvaluationContext({
   return (
     <div
       aria-label="自訂價格評估基準"
-      className="mb-4 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-[#A3FF3F] pl-3 text-xs"
+      className="min-w-0 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-[#A3FF3F] pl-3 text-xs"
     >
       <CalendarDays aria-hidden="true" className="text-[#565656]" size={15} />
       <span className="text-[#6B7280]">評估基準</span>

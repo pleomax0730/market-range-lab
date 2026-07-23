@@ -8,3 +8,8 @@ coverage/
 !.env.example
 work/
 outputs/
+
+# Impeccable machine-local configuration
+.claude/settings.local.json
+.codex/hooks.json
+.impeccable/config.local.json

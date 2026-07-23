@@ -69,7 +69,7 @@ export function PremiumAnalysisPanel({
 
   if (!premium) {
     return (
-      <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 text-xs text-[#6B7280]">
+      <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 text-xs text-[#6B7280] lg:col-span-4">
         <strong className="block text-[#0D0D0D]">歷史 Premium 壓力參考</strong>
         <p className="mt-1">{candidate.premiumUnavailableReason ?? '目前無法計算。'}</p>
       </div>
@@ -87,7 +87,7 @@ export function PremiumAnalysisPanel({
     Number(annualCapitalReturnRatePct) >= 0
 
   return (
-    <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4">
+    <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-bold">歷史 Premium 壓力參考</h3>

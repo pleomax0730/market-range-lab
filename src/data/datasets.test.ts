@@ -5,14 +5,14 @@ import {
 } from "./datasets";
 
 describe("defaultDashboardSettings", () => {
-  it("does not assume an existing assignment obligation", () => {
-    expect(defaultDashboardSettings().obligation).toBe("0");
+  it("stores only analysis controls", () => {
+    expect(defaultDashboardSettings().candidate).toBe("");
     expect(defaultDashboardSettings().annualCapitalReturnRatePct).toBe("10");
   });
 });
 
 describe("normalizeDashboardSettings", () => {
-  it("removes the unversioned legacy obligation default", () => {
+  it("drops legacy account fields while preserving analysis controls", () => {
     const legacy = {
       cash: "60000",
       multiple: "1.2",
@@ -22,17 +22,11 @@ describe("normalizeDashboardSettings", () => {
       horizon: 1,
     };
 
-    expect(normalizeDashboardSettings(legacy).obligation).toBe("0");
-    expect(normalizeDashboardSettings(legacy).annualCapitalReturnRatePct).toBe("10");
-  });
-
-  it("preserves an explicitly saved obligation in current settings", () => {
-    const saved = {
-      ...defaultDashboardSettings(),
-      obligation: "75000",
-    };
-
-    expect(normalizeDashboardSettings(saved).obligation).toBe("75000");
+    const normalized = normalizeDashboardSettings(legacy);
+    expect(normalized.candidate).toBe("71");
+    expect(normalized.annualCapitalReturnRatePct).toBe("10");
+    expect("cash" in normalized).toBe(false);
+    expect("obligation" in normalized).toBe(false);
   });
 
   it("preserves a valid annual capital return rate", () => {

@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
+  Check,
   Database,
   Download,
   FileUp,
   Info,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   serializeAnalysisReport,
@@ -36,6 +38,11 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Tooltip } from "./components/ui/tooltip";
 import { downloadText } from "./lib/export";
+import {
+  inferSymbolFromFilename,
+  isValidSymbol,
+  normalizeSymbol,
+} from "./lib/symbol-inference";
 
 const INVESTING_SOURCE =
   "https://www.investing.com/etfs/direxion-dly-semiconductor-bull-3x-historical-data";
@@ -61,29 +68,15 @@ function formatTime(iso: string, zone: string) {
   }).format(new Date(iso));
 }
 
-function inferSymbolFromFilename(filename: string) {
-  const ignoredTokens = new Set([
-    "ETF",
-    "STOCK",
-    "PRICE",
-    "HISTORY",
-    "HISTORICAL",
-    "DATA",
-    "DAILY",
-    "WEEKLY",
-  ]);
-  const stem = filename.replace(/\.[^.]+$/, "").toUpperCase();
-  const tokens = stem.split(/[^A-Z0-9.]+/).filter(Boolean);
-  return tokens.find(
-    (token) =>
-      !ignoredTokens.has(token) &&
-      /^[A-Z][A-Z0-9.-]{0,9}$/.test(token),
-  );
-}
-
 export function App() {
   const historyCatalog = useHistoryCatalog();
   const { datasets, activeId, active } = historyCatalog;
+  const [pendingImport, setPendingImport] = useState<{
+    file: File;
+    interval: "daily" | "weekly";
+    detectedSymbol: string;
+    symbol: string;
+  }>();
   const [messages, setMessages] = useState<string[]>([]);
   const [horizon, setHorizon] = useState(dashboardDefaults.horizon);
   const [candidate, setCandidate] = useState(dashboardDefaults.candidate);
@@ -94,9 +87,6 @@ export function App() {
     scope: "",
     value: "",
   });
-  const [cash, setCash] = useState(dashboardDefaults.cash);
-  const [multiple, setMultiple] = useState(dashboardDefaults.multiple);
-  const [obligation, setObligation] = useState(dashboardDefaults.obligation);
   const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
     dashboardDefaults.annualCapitalReturnRatePct,
   );
@@ -127,9 +117,6 @@ export function App() {
       const settings = await getDashboardSettings();
       if (settings) {
         const normalized = normalizeDashboardSettings(settings);
-        setCash(normalized.cash);
-        setMultiple(normalized.multiple);
-        setObligation(normalized.obligation);
         setCandidate(normalized.candidate);
         setCandidateSide(normalized.candidateSide);
         setHorizon(normalized.horizon);
@@ -145,9 +132,6 @@ export function App() {
       () =>
         void saveDashboardSettings({
           settingsVersion: 3,
-          cash,
-          multiple,
-          obligation,
           candidate,
           candidateSide,
           horizon,
@@ -157,9 +141,6 @@ export function App() {
     );
     return () => window.clearTimeout(timer);
   }, [
-    cash,
-    multiple,
-    obligation,
     candidate,
     candidateSide,
     horizon,
@@ -234,11 +215,6 @@ export function App() {
         manualSession,
       },
       pauseReasons,
-      account: {
-        cash: Number(cash),
-        multiple: Number(multiple),
-        existingObligation: Number(obligation),
-      },
       selectedWeeks: horizon,
       marketPremiumPerShare:
         marketPremium.trim() && Number.isFinite(Number(marketPremium))
@@ -260,14 +236,11 @@ export function App() {
       anchorDate,
       anchorPrice,
       analysisIntraday,
-      cash,
       horizon,
       manualDate,
       manualSession,
       manualUpdatedAt,
       marketPremium,
-      multiple,
-      obligation,
       pauseReasons,
       quote,
       quotePaused,
@@ -287,8 +260,6 @@ export function App() {
   });
   const analyses = report?.analyses ?? [];
   const selected = analyses[horizon - 1];
-  const candidateOverlayPending = candidateSide === "lower" && Number(candidate) > 0 && analysisLoading;
-  const overlay = candidateOverlayPending ? undefined : report?.account.overlay;
   const candidateResult = Number(candidate) > 0
     ? report?.candidate?.weeks === horizon
       ? report.candidate
@@ -304,18 +275,44 @@ export function App() {
   );
   const candidateResultPending = Boolean(candidateResultStale || (candidateResult && analysisLoading));
 
-  async function handleHistoryFile(
+  function prepareHistoryFile(
     file: File | undefined,
     interval: "daily" | "weekly",
   ) {
     if (!file) return;
-    const symbol = inferSymbolFromFilename(file.name);
-    if (!symbol) {
+    const inference = inferSymbolFromFilename(file.name);
+    if (!inference.symbol) {
       setMessages([
         "錯誤：無法從檔名辨識 Symbol，請使用包含 ticker 的檔名，例如 SOXL ETF History.csv。",
       ]);
       return;
     }
+    if (inference.requiresConfirmation) {
+      setMessages([]);
+      setPendingImport({
+        file,
+        interval,
+        detectedSymbol: inference.detectedToken ?? inference.symbol,
+        symbol: inference.symbol,
+      });
+      return;
+    }
+    void handleHistoryFile(file, interval, inference.symbol);
+  }
+
+  async function handleHistoryFile(
+    file: File,
+    interval: "daily" | "weekly",
+    symbolInput: string,
+  ) {
+    const symbol = normalizeSymbol(symbolInput);
+    if (!isValidSymbol(symbol)) {
+      setMessages([
+        "錯誤：Symbol 需是 Yahoo ticker，例如 PLTR；不可包含空白或公司全名。",
+      ]);
+      return;
+    }
+    setPendingImport(undefined);
     const matchingDaily = interval === "weekly"
       ? datasets.find(
           (dataset) => dataset.symbol === symbol && dataset.interval === "daily",
@@ -413,9 +410,11 @@ export function App() {
                   type="file"
                   accept=".csv,text/csv"
                   disabled={!historyCatalog.ready}
-                  onChange={(event) =>
-                    void handleHistoryFile(event.target.files?.[0], "daily")
-                  }
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    prepareHistoryFile(file, "daily");
+                  }}
                 />
               </label>
               <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#D8D8D8] bg-white text-xs font-semibold transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-within:ring-2 focus-within:ring-blue-600 hover:bg-[#F8F8F8]">
@@ -426,12 +425,62 @@ export function App() {
                   type="file"
                   accept=".csv,text/csv"
                   disabled={!historyCatalog.ready}
-                  onChange={(event) =>
-                    void handleHistoryFile(event.target.files?.[0], "weekly")
-                  }
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    prepareHistoryFile(file, "weekly");
+                  }}
                 />
               </label>
             </div>
+            {pendingImport && (
+              <form
+                className="mt-3 border-t border-[#E5E5E5] pt-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleHistoryFile(
+                    pendingImport.file,
+                    pendingImport.interval,
+                    pendingImport.symbol,
+                  );
+                }}
+              >
+                <div className="flex items-end gap-2">
+                  <label className="min-w-0 flex-1">
+                    <span className="field-label">確認 Symbol</span>
+                    <Input
+                      autoFocus
+                      className="num"
+                      aria-label="確認 Symbol"
+                      value={pendingImport.symbol}
+                      onChange={(event) =>
+                        setPendingImport((current) =>
+                          current
+                            ? { ...current, symbol: event.target.value.toUpperCase() }
+                            : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="取消匯入"
+                    onClick={() => setPendingImport(undefined)}
+                  >
+                    <X size={15} />
+                  </Button>
+                  <Button type="submit" size="sm">
+                    <Check size={15} />
+                    匯入
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#6B7280]">
+                  檔名辨識到「{pendingImport.detectedSymbol}」。Yahoo 使用 ticker；例如 Palantir 應輸入 PLTR。
+                </p>
+              </form>
+            )}
             {messages.length > 0 && (
               <div className="ui-enter mt-3 space-y-1 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B4F00]">
                 {messages.map((message) => (
@@ -704,13 +753,18 @@ export function App() {
                 )}
               </section>
 
-              <section className="grid gap-4 xl:grid-cols-2">
-                <div className="panel p-4">
-                  <div className="mb-4 flex items-center gap-2">
-                    <h2 className="text-sm font-bold">自訂價格評估</h2>
-                    <Tooltip content="Candidate Price（候選價）不做履約價間距取整；Reference Date、Session、Horizon 與 Target Week Close 沿用目前分析。">
-                      <Info size={14} className="text-[#6B7280]" />
-                    </Tooltip>
+              <section className="panel p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-bold">自訂價格評估</h2>
+                      <Tooltip content="Candidate Price（候選價）不做履約價間距取整；Reference Date、Session、Horizon 與 Target Week Close 沿用目前分析。">
+                        <Info size={14} className="text-[#6B7280]" />
+                      </Tooltip>
+                    </div>
+                    <p className="mt-1 text-xs text-[#6B7280]">
+                      輸入任意價格，檢查它在目前週期的歷史跌破、觸及與 Premium 壓力參考。
+                    </p>
                   </div>
                   {selected && (
                     <EvaluationContext
@@ -720,114 +774,47 @@ export function App() {
                       weeks={selected.weeks}
                     />
                   )}
-                  <div className="grid grid-cols-[1fr_120px] gap-2">
-                    <Input
-                      className="num"
-                      type="number"
-                      step="0.01"
-                      placeholder="例如 71.00"
-                      value={candidate}
-                      onChange={(event) => setCandidate(event.target.value)}
-                    />
-                    <select
-                      className="h-10 rounded-md border border-[#D8D8D8] bg-white px-3 text-sm"
-                      value={candidateSide}
-                      onChange={(event) =>
-                        setCandidateSide(
-                          event.target.value as "lower" | "upper",
-                        )
-                      }
-                    >
-                      <option value="lower">下檔 / Put</option>
-                      <option value="upper">上檔 / Call</option>
-                    </select>
-                  </div>
-                  <div className={`relative ${Number(candidate) > 0 && analysisLoading ? "min-h-[180px]" : ""}`} aria-busy={analysisLoading}>
-                    {candidateResult && (
-                      <div className={candidateResultPending ? "opacity-50 transition-opacity duration-150" : undefined}>
-                        <CandidateResult
-                          candidate={candidateResult}
-                          anchorPrice={anchorPrice}
-                          marketPremium={marketPremium}
-                          onMarketPremiumChange={setMarketPremium}
-                          annualCapitalReturnRatePct={annualCapitalReturnRatePct}
-                          onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
-                        />
-                      </div>
-                    )}
-                    {Number(candidate) > 0 && analysisLoading && (
-                      <div className="absolute inset-0 flex items-start justify-center bg-white/70 pt-6 text-xs text-[#6B7280]">
-                        <span className="flex items-center gap-1"><RefreshCw size={12} className="animate-spin-fast" />候選價統計更新中</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
-                <div className="panel p-4">
-                  <h2 className="text-sm font-bold">指派預算疊合</h2>
-                  <p className="mb-4 mt-1 text-xs text-[#6B7280]">
-                    {candidateSide === "upper" && Number(candidate) > 0
-                      ? "Call 候選價不套用指派預算；目前使用下檔 Safe 邊界。"
-                      : "僅套用下檔 Put 候選價。"}
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <label>
-                      <span className="field-label">現金</span>
-                      <Input
-                        className="num"
-                        type="number"
-                        min="0"
-                        value={cash}
-                        onChange={(event) => setCash(event.target.value)}
+                <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
+                  <Input
+                    className="num"
+                    type="number"
+                    step="0.01"
+                    placeholder="例如 71.00"
+                    value={candidate}
+                    onChange={(event) => setCandidate(event.target.value)}
+                  />
+                  <select
+                    className="h-10 rounded-md border border-[#D8D8D8] bg-white px-3 text-sm"
+                    value={candidateSide}
+                    onChange={(event) =>
+                      setCandidateSide(
+                        event.target.value as "lower" | "upper",
+                      )
+                    }
+                  >
+                    <option value="lower">下檔 / Put</option>
+                    <option value="upper">上檔 / Call</option>
+                  </select>
+                </div>
+                <div className={`relative ${Number(candidate) > 0 && analysisLoading ? "min-h-[180px]" : ""}`} aria-busy={analysisLoading}>
+                  {candidateResult && (
+                    <div className={candidateResultPending ? "opacity-50 transition-opacity duration-150" : undefined}>
+                      <CandidateResult
+                        candidate={candidateResult}
+                        anchorPrice={anchorPrice}
+                        marketPremium={marketPremium}
+                        onMarketPremiumChange={setMarketPremium}
+                        annualCapitalReturnRatePct={annualCapitalReturnRatePct}
+                        onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
                       />
-                    </label>
-                    <label>
-                      <span className="field-label">Budget 倍數</span>
-                      <Input
-                        className="num"
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={multiple}
-                        onChange={(event) => setMultiple(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <span className="field-label">既有義務（無則為 0）</span>
-                      <Input
-                        className="num"
-                        type="number"
-                        min="0"
-                        value={obligation}
-                        onChange={(event) => setObligation(event.target.value)}
-                      />
-                    </label>
-                  </div>
-                  {overlay && !overlay.valid && (
-                    <p className="mt-3 text-xs font-semibold text-red-700">
-                      帳戶與價格輸入必須是有限的非負數。
-                    </p>
+                    </div>
                   )}
-                  <dl className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
-                    <dt className="text-[#6B7280]">指派預算</dt>
-                    <dd className="num text-right font-semibold">
-                      {overlay ? money.format(overlay.budget) : "—"}
-                    </dd>
-                    <dt className="text-[#6B7280]">剩餘可用</dt>
-                    <dd
-                      className={`num text-right font-semibold ${overlay && overlay.available <= 0 ? "text-red-700" : ""}`}
-                    >
-                      {overlay ? money.format(overlay.available) : "—"}
-                      {overlay && overlay.available < 0 ? " · 已超額承擔" : ""}
-                    </dd>
-                    <dt className="text-[#6B7280]">Put 價每口現貨價值</dt>
-                    <dd className="num text-right font-semibold">
-                      {overlay ? money.format(overlay.contractCost) : "—"}
-                    </dd>
-                  </dl>
-                  <p className="mt-4 border-t border-[#E5E5E5] pt-3 text-xs text-[#6B7280]">
-                    權利金不計；100
-                    股整口可行性僅作內部預算檢查，不是建議張數。理論零權益下限不等於券商強平線。
-                  </p>
+                  {Number(candidate) > 0 && analysisLoading && (
+                    <div className="absolute inset-0 flex items-start justify-center bg-white/70 pt-6 text-xs text-[#6B7280]">
+                      <span className="flex items-center gap-1"><RefreshCw size={12} className="animate-spin-fast" />候選價統計更新中</span>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -1197,7 +1184,7 @@ function CandidateResult({
 }) {
   const { result, sampleSize } = candidate;
   return (
-    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm">
+    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm lg:grid-cols-4">
       <div>
         <span className="field-label">分級</span>
         <RiskGradeBadge grade={result.grade} />
