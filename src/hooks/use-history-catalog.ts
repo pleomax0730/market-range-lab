@@ -8,6 +8,14 @@ import {
   setActiveDataset,
 } from '../data/datasets'
 import {
+  defaultHistoryImportOptions,
+  formatHistoryImportMessages,
+  prepareHistoryImport,
+  resolveImportSymbol,
+  type HistoryInterval,
+  type PendingHistoryImport,
+} from '../domain/history-intake'
+import {
   importHistoryCsv,
   type HistoryImportOptions,
 } from '../domain/import-history'
@@ -53,6 +61,8 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     ready: false,
     error: '',
   })
+  const [pendingImport, setPendingImport] = useState<PendingHistoryImport>()
+  const [messages, setMessages] = useState<string[]>([])
   const snapshotRef = useRef(snapshot)
   const operationQueueRef = useRef<Promise<void>>(Promise.resolve())
 
@@ -122,6 +132,79 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     return result
   }), [commit, enqueue, repository])
 
+  const commitImport = useCallback(async (
+    csv: string,
+    filename: string,
+    interval: HistoryInterval,
+    symbolInput: string,
+  ) => {
+    const resolved = resolveImportSymbol(symbolInput)
+    if (!resolved.ok) {
+      setPendingImport(undefined)
+      setMessages(resolved.messages)
+      return
+    }
+    setPendingImport(undefined)
+    const result = await importAndActivate(
+      csv,
+      defaultHistoryImportOptions({
+        symbol: resolved.symbol,
+        filename,
+        interval,
+      }),
+    )
+    setMessages(
+      formatHistoryImportMessages(
+        result,
+        interval,
+        snapshotRef.current.datasets,
+      ),
+    )
+  }, [importAndActivate])
+
+  const importFile = useCallback(async (
+    file: File,
+    interval: HistoryInterval,
+  ) => {
+    const prepared = await prepareHistoryImport(file, interval)
+    if (prepared.status === 'error') {
+      setPendingImport(undefined)
+      setMessages(prepared.messages)
+      return
+    }
+    if (prepared.status === 'needs-confirmation') {
+      setMessages([])
+      setPendingImport(prepared.pending)
+      return
+    }
+    await commitImport(
+      prepared.csv,
+      prepared.filename,
+      prepared.interval,
+      prepared.symbol,
+    )
+  }, [commitImport])
+
+  const confirmImport = useCallback(async (symbolInput: string) => {
+    if (!pendingImport) return
+    await commitImport(
+      pendingImport.csv,
+      pendingImport.filename,
+      pendingImport.interval,
+      symbolInput,
+    )
+  }, [commitImport, pendingImport])
+
+  const cancelImport = useCallback(() => {
+    setPendingImport(undefined)
+  }, [])
+
+  const updatePendingSymbol = useCallback((symbol: string) => {
+    setPendingImport((current) =>
+      current ? { ...current, symbol: symbol.toUpperCase() } : current,
+    )
+  }, [])
+
   const activate = useCallback((id: string) => enqueue(async () => {
     if (!snapshotRef.current.datasets.some((dataset) => dataset.id === id)) return
     try {
@@ -164,7 +247,13 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
   return {
     ...snapshot,
     active,
+    pendingImport,
+    messages,
     importAndActivate,
+    importFile,
+    confirmImport,
+    cancelImport,
+    updatePendingSymbol,
     activate,
     remove,
     clear,

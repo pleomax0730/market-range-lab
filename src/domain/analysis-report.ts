@@ -1,5 +1,4 @@
 import { analyzeHistory, extractModeledPaths, type AnalysisInput } from './analyze'
-import { applyGradePause } from './export-analysis'
 import { GRADE_THRESHOLDS, MODEL_VERSION } from './model'
 import {
   calculatePutPremiumAnalysis,
@@ -100,6 +99,34 @@ export type AnalysisReport = {
 
 function pauseCandidate(result: RiskSide, weeks: number, paused: boolean): RiskSide {
   return paused && weeks <= 4 ? { ...result, grade: 'insufficient' } : result
+}
+
+export function applyGradePause(analyses: HorizonAnalysis[], paused: boolean) {
+  return analyses.map((analysis) => ({
+    ...analysis,
+    lower: analysis.lower.map((risk) => ({
+      ...risk,
+      grade: paused && analysis.weeks <= 4 ? 'insufficient' as const : risk.grade,
+    })),
+    upper: analysis.upper.map((risk) => ({
+      ...risk,
+      grade: paused && analysis.weeks <= 4 ? 'insufficient' as const : risk.grade,
+    })),
+    conservativeCertification: {
+      lower: {
+        ...analysis.conservativeCertification.lower,
+        grade: paused && analysis.weeks <= 4
+          ? 'insufficient' as const
+          : analysis.conservativeCertification.lower.grade,
+      },
+      upper: {
+        ...analysis.conservativeCertification.upper,
+        grade: paused && analysis.weeks <= 4
+          ? 'insufficient' as const
+          : analysis.conservativeCertification.upper.grade,
+      },
+    },
+  }))
 }
 
 export function calculateStatisticalReport(

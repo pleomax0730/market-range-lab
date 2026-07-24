@@ -15,11 +15,10 @@ import {
   serializeAnalysisReport,
   type CandidateAnalysis,
 } from "./domain/analysis-report";
+import { DEFAULT_HISTORY_SOURCE_URL } from "./domain/history-intake";
 import { previousRegularSession } from "./domain/market-calendar";
-import { reconcileWeekly } from "./domain/reconcile-weekly";
 import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
-import { DEFAULT_PREMIUM_ASSUMPTIONS } from "./domain/premium-analysis";
-import { useAnalysisReport } from "./hooks/use-analysis-report";
+import { useAnalysisSession } from "./hooks/use-analysis-session";
 import { useHistoryCatalog } from "./hooks/use-history-catalog";
 import { useReferencePrice } from "./hooks/use-reference-price";
 import { TermHelp } from "./components/term-help";
@@ -38,14 +37,6 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Tooltip } from "./components/ui/tooltip";
 import { downloadText } from "./lib/export";
-import {
-  inferSymbolFromFilename,
-  isValidSymbol,
-  normalizeSymbol,
-} from "./lib/symbol-inference";
-
-const INVESTING_SOURCE =
-  "https://www.investing.com/etfs/direxion-dly-semiconductor-bull-3x-historical-data";
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -70,14 +61,17 @@ function formatTime(iso: string, zone: string) {
 
 export function App() {
   const historyCatalog = useHistoryCatalog();
-  const { datasets, activeId, active } = historyCatalog;
-  const [pendingImport, setPendingImport] = useState<{
-    file: File;
-    interval: "daily" | "weekly";
-    detectedSymbol: string;
-    symbol: string;
-  }>();
-  const [messages, setMessages] = useState<string[]>([]);
+  const {
+    datasets,
+    activeId,
+    active,
+    pendingImport,
+    messages,
+    importFile,
+    confirmImport,
+    cancelImport,
+    updatePendingSymbol,
+  } = historyCatalog;
   const [horizon, setHorizon] = useState(dashboardDefaults.horizon);
   const [candidate, setCandidate] = useState(dashboardDefaults.candidate);
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
@@ -111,6 +105,9 @@ export function App() {
   const manualDate = reference.manualDate;
   const manualSession = reference.manualSession;
   const manualUpdatedAt = reference.manualUpdatedAt;
+  const anchorPrice = reference.price;
+  const anchorDate = reference.anchorDate;
+  const analysisIntraday = reference.intraday;
 
   useEffect(() => {
     void (async () => {
@@ -148,103 +145,20 @@ export function App() {
     settingsLoaded,
   ]);
 
-  const anchorPrice = reference.price;
-  const anchorDate = reference.anchorDate;
-  const analysisIntraday = reference.intraday;
-  const staleGrade = reference.stale;
-  const historyStale = Boolean(
-    active &&
-      (active.interval === "daily"
-        ? (active.bars.at(-1)?.date ?? "") < previousRegularSession(anchorDate)
-        : Date.parse(`${anchorDate}T00:00:00Z`) -
-            Date.parse(`${active.bars.at(-1)?.date ?? ""}T00:00:00Z`) >
-          14 * 86_400_000),
-  );
-  const weeklyIntraday = active?.interval === "weekly" && analysisIntraday;
-  const gradePaused = staleGrade || historyStale || weeklyIntraday;
-  const pauseReasons = useMemo(
-    () => [
-      ...(historyStale ? ["stale-history"] : []),
-      ...(staleGrade ? ["stale-or-missing-quote"] : []),
-      ...(weeklyIntraday ? ["weekly-intraday-resolution"] : []),
-    ],
-    [historyStale, staleGrade, weeklyIntraday],
-  );
-  const analysisInput = useMemo(
-    () => active && anchorPrice > 0 ? {
-      bars: active.bars,
-      anchorPrice,
-      anchorDate,
-      intraday: analysisIntraday,
-      interval: active.interval,
-    } : undefined,
-    [active, anchorPrice, anchorDate, analysisIntraday],
-  );
-  const reportInput = useMemo(
-    () => analysisInput ? {
-      analysis: analysisInput,
-      candidate: Number(candidate) > 0
-        ? { weeks: horizon, price: Number(candidate), side: candidateSide }
-        : undefined,
-      gradePaused,
-    } : undefined,
-    [analysisInput, candidate, candidateSide, gradePaused, horizon],
-  );
-  const modelKey = active && analysisInput
-    ? [
-        active.id,
-        active.sha256,
-        anchorDate,
-        analysisIntraday,
-        active.interval,
-      ].join("|")
-    : undefined;
-  const analysisKey = modelKey ? `${modelKey}|price=${anchorPrice}` : undefined;
-  const reportContext = useMemo(
-    () => active ? {
-      dataset: active,
-      reference: {
-        quote,
-        price: anchorPrice,
-        anchorDate,
-        intraday: analysisIntraday,
-        mode: reference.mode,
-        paused: quotePaused,
-        manualUpdatedAt,
-        manualDate,
-        manualSession,
-      },
-      pauseReasons,
-      selectedWeeks: horizon,
-      marketPremiumPerShare:
-        marketPremium.trim() && Number.isFinite(Number(marketPremium))
-          ? Number(marketPremium)
-          : undefined,
-      premiumAssumptions: {
-        ...DEFAULT_PREMIUM_ASSUMPTIONS,
-        annualCapitalReturnRate:
-          annualCapitalReturnRatePct.trim() &&
-          Number.isFinite(Number(annualCapitalReturnRatePct)) &&
-          Number(annualCapitalReturnRatePct) >= 0
-            ? Number(annualCapitalReturnRatePct) / 100
-            : DEFAULT_PREMIUM_ASSUMPTIONS.annualCapitalReturnRate,
-      },
-    } : undefined,
-    [
-      active,
-      annualCapitalReturnRatePct,
-      anchorDate,
-      anchorPrice,
-      analysisIntraday,
+  const sessionKnobs = useMemo(
+    () => ({
       horizon,
-      manualDate,
-      manualSession,
-      manualUpdatedAt,
+      candidate,
+      candidateSide,
       marketPremium,
-      pauseReasons,
-      quote,
-      quotePaused,
-      reference.mode,
+      annualCapitalReturnRatePct,
+    }),
+    [
+      annualCapitalReturnRatePct,
+      candidate,
+      candidateSide,
+      horizon,
+      marketPremium,
     ],
   );
   const {
@@ -252,11 +166,13 @@ export function App() {
     staleCandidate,
     loading: analysisLoading,
     error: analysisError,
-  } = useAnalysisReport({
-    input: reportInput,
-    analysisKey,
-    modelKey,
-    context: reportContext,
+    historyStale,
+    weeklyIntraday,
+    gradePaused,
+  } = useAnalysisSession({
+    dataset: active,
+    reference,
+    knobs: sessionKnobs,
   });
   const analyses = report?.analyses ?? [];
   const selected = analyses[horizon - 1];
@@ -274,85 +190,6 @@ export function App() {
       candidateResult.price === Number(candidate),
   );
   const candidateResultPending = Boolean(candidateResultStale || (candidateResult && analysisLoading));
-
-  function prepareHistoryFile(
-    file: File | undefined,
-    interval: "daily" | "weekly",
-  ) {
-    if (!file) return;
-    const inference = inferSymbolFromFilename(file.name);
-    if (!inference.symbol) {
-      setMessages([
-        "錯誤：無法從檔名辨識 Symbol，請使用包含 ticker 的檔名，例如 SOXL ETF History.csv。",
-      ]);
-      return;
-    }
-    if (inference.requiresConfirmation) {
-      setMessages([]);
-      setPendingImport({
-        file,
-        interval,
-        detectedSymbol: inference.detectedToken ?? inference.symbol,
-        symbol: inference.symbol,
-      });
-      return;
-    }
-    void handleHistoryFile(file, interval, inference.symbol);
-  }
-
-  async function handleHistoryFile(
-    file: File,
-    interval: "daily" | "weekly",
-    symbolInput: string,
-  ) {
-    const symbol = normalizeSymbol(symbolInput);
-    if (!isValidSymbol(symbol)) {
-      setMessages([
-        "錯誤：Symbol 需是 Yahoo ticker，例如 PLTR；不可包含空白或公司全名。",
-      ]);
-      return;
-    }
-    setPendingImport(undefined);
-    const matchingDaily = interval === "weekly"
-      ? datasets.find(
-          (dataset) => dataset.symbol === symbol && dataset.interval === "daily",
-        )
-      : undefined;
-    const result = await historyCatalog.importAndActivate(await file.text(), {
-      symbol,
-      filename: file.name,
-      sourceUrl: INVESTING_SOURCE,
-      importedAt: new Date().toISOString(),
-      splitAdjustedConfirmed: true,
-      discontinuitiesConfirmed: true,
-      interval,
-    });
-    const nextMessages = [
-      ...result.errors.map((item) => `錯誤：${item.message}`),
-      ...result.warnings.map((item) => `提醒：${item.message}`),
-    ];
-    if (!result.dataset) {
-      setMessages(nextMessages);
-      return;
-    }
-    if (
-      interval === "weekly" &&
-      matchingDaily
-    ) {
-      const reconciliation = reconcileWeekly(
-        matchingDaily.bars,
-        result.dataset.bars,
-      );
-      nextMessages.push(
-        `Weekly 對帳：${reconciliation.comparisons.length} 個可比較週收盤，${reconciliation.mismatchCount} 個差異超過 0.5%。Weekly 已儲存，Daily 維持 Active。`,
-      );
-    } else if (interval === "weekly") {
-      nextMessages.push(
-        "已啟用 Weekly-only 分析：使用每週 OHLC 計算週收盤與週內觸及，精度低於 Daily。",
-      );
-    }
-    setMessages(nextMessages);
-  }
 
   function exportResults(kind: "json" | "csv") {
     if (!report) return;
@@ -413,7 +250,7 @@ export function App() {
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.currentTarget.value = "";
-                    prepareHistoryFile(file, "daily");
+                    if (file) void importFile(file, "daily");
                   }}
                 />
               </label>
@@ -428,7 +265,7 @@ export function App() {
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.currentTarget.value = "";
-                    prepareHistoryFile(file, "weekly");
+                    if (file) void importFile(file, "weekly");
                   }}
                 />
               </label>
@@ -438,11 +275,7 @@ export function App() {
                 className="mt-3 border-t border-[#E5E5E5] pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void handleHistoryFile(
-                    pendingImport.file,
-                    pendingImport.interval,
-                    pendingImport.symbol,
-                  );
+                  void confirmImport(pendingImport.symbol);
                 }}
               >
                 <div className="flex items-end gap-2">
@@ -454,11 +287,7 @@ export function App() {
                       aria-label="確認 Symbol"
                       value={pendingImport.symbol}
                       onChange={(event) =>
-                        setPendingImport((current) =>
-                          current
-                            ? { ...current, symbol: event.target.value.toUpperCase() }
-                            : current,
-                        )
+                        updatePendingSymbol(event.target.value)
                       }
                     />
                   </label>
@@ -467,7 +296,7 @@ export function App() {
                     variant="ghost"
                     size="icon"
                     aria-label="取消匯入"
-                    onClick={() => setPendingImport(undefined)}
+                    onClick={cancelImport}
                   >
                     <X size={15} />
                   </Button>
@@ -620,7 +449,7 @@ export function App() {
                       Yahoo 報價失敗：{quoteError}。
                     </p>
                   )}
-                  {staleGrade && (
+                  {reference.stale && (
                     <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-red-700">
                       <AlertTriangle size={14} />
                       報價無法用於自動分級，請更新或輸入手動參考價。
@@ -823,10 +652,10 @@ export function App() {
                   <div>
                     <strong className="text-[#0D0D0D]">歷史資料來源</strong>
                     <p className="mt-1">
-                      {active.sourceUrl === INVESTING_SOURCE ? (
+                      {active.sourceUrl === DEFAULT_HISTORY_SOURCE_URL ? (
                         <a
                           className="text-blue-700 underline"
-                          href={INVESTING_SOURCE}
+                          href={DEFAULT_HISTORY_SOURCE_URL}
                           target="_blank"
                           rel="noreferrer"
                         >
