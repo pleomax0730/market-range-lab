@@ -132,10 +132,6 @@ _Avoid_: Broker margin return, guaranteed annual yield
 The Capital Return Floor plus a stated fraction of the difference between CVaR95 Expiration Loss and mean Expiration Payoff Loss. The interface reports light 10% and conservative 25% variants.
 _Avoid_: Safety Grade, theoretical option value, objective risk price
 
-**Executable Premium**:
-An optional user-entered net option premium per share based on an executable bid or plausible limit fill, after estimated costs, used only to locate the quote relative to historical compensation references. It is not automatically sourced or verified as a live quote.
-_Avoid_: Last trade, ask, midpoint, guaranteed fill, evidence that a trade is worthwhile
-
 **Reference Price**:
 The Regular-Session Quote or explicit Manual Reference Price from which forward returns are converted into projected price levels.
 _Avoid_: Entry price, strike

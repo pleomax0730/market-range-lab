@@ -17,7 +17,6 @@ The current version includes auditable historical compensation floors for cash-s
 - Weekly CSV, accepted as a lower-resolution canonical fallback and optionally compared with Daily History.
 - Current regular-session quote from Yahoo, or a visibly identified manual override.
 - One selected Candidate Price for detailed evaluation, while system-generated range boundaries remain continuous prices.
-- Optional executable Put premium per share for comparison with historical compensation floors; it is entered manually and is not treated as a live quote.
 - Annual cash-secured capital-return hurdle, persisted locally and defaulted to 10%; changing it reprices the derived floors without recomputing historical paths.
 - Optional advanced overrides for grading thresholds; every override is included in exports.
 
@@ -89,9 +88,9 @@ The Put premium view reports four secondary historical references per share:
 3. Light Tail Floor: Capital Return Floor plus `10% * (CVaR95 - mean loss)`.
 4. Conservative Tail Floor: Capital Return Floor plus `25% * (CVaR95 - mean loss)`.
 
-These defaults and formula components are visible and exported. The 10% and 25% tail additions are risk-preference assumptions, not statistically calibrated prices. An entered executable net bid or plausible limit fill is located relative to the references, but the UI never describes that comparison as evidence that a Put is cheap or worth selling. Premium status never changes the Candidate Price's Safety Grade. The model does not calculate a Naked Call minimum premium because finite history cannot bound its theoretical loss.
+These defaults and formula components are visible and exported. The 10% and 25% tail additions are risk-preference assumptions, not statistically calibrated prices. The interface does not accept an executable market premium for comparison and never treats the floors as evidence that a Put is cheap or worth selling. Floor diagnostics never change the Candidate Price's Safety Grade. The model does not calculate a Naked Call minimum premium because finite history cannot bound its theoretical loss.
 
-Premium comparison requires at least 20 effective positive-payoff observations (`effective sample size * observed payoff rate`). Below that evidence gate, comparison status is `insufficient-evidence`. When no historical path produces a positive Put payoff, bootstrap mean loss and historical CVaR cannot estimate an unobserved jump loss. The interface displays an explicit warning and does not describe the resulting cost-and-capital-only reference as market fair value or evidence of a cheap option.
+When fewer than 20 effective positive-payoff observations exist (`effective sample size * observed payoff rate`), or when no historical path produces a positive Put payoff, the interface shows an evidence warning. Bootstrap mean loss and historical CVaR cannot invent an unobserved jump loss; the resulting cost-and-capital-only references are not market fair value.
 
 ## Safety Grades
 
@@ -127,7 +126,7 @@ Downside Put candidates additionally show historical premium compensation floors
 4. Enter an optional Candidate Price and choose Put or Call.
 5. Review the one-to-eight-week summary table.
 6. Select a horizon for detailed distribution, range, touch, close, confidence, and stress views.
-7. For a downside Put candidate, review the four premium compensation floors and optionally compare a manually entered executable premium.
+7. For a downside Put candidate, review the four premium compensation floors.
 8. Optionally pause quote refresh, override the Reference Price, or export the result.
 
 The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected horizon's Target Week Close. Changing a Candidate Price never silently changes that evaluation context.
@@ -150,7 +149,7 @@ Each stored dataset includes source metadata, original filename, SHA-256 hash, d
 
 ## Export
 
-The application exports JSON and CSV, not PDF. Exports include all inputs, data provenance, file hash, model version, thresholds, quote source and timestamp, path counts, estimates, confidence intervals, premium-floor assumptions and components, optional executable premium, warnings, and results for all horizons.
+The application exports JSON and CSV, not PDF. Exports include all inputs, data provenance, file hash, model version, thresholds, quote source and timestamp, path counts, estimates, confidence intervals, premium-floor assumptions and components, warnings, and results for all horizons.
 
 ## Failure States
 

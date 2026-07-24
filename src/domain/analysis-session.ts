@@ -32,7 +32,6 @@ export type AnalysisSessionKnobs = {
   horizon: number
   candidate: string
   candidateSide: 'lower' | 'upper'
-  marketPremium: string
   annualCapitalReturnRatePct: string
 }
 
@@ -74,12 +73,6 @@ export function resolvePremiumAssumptions(
         ? parsed / 100
         : DEFAULT_PREMIUM_ASSUMPTIONS.annualCapitalReturnRate,
   }
-}
-
-export function parseOptionalPremium(marketPremium: string): number | undefined {
-  if (!marketPremium.trim()) return undefined
-  const value = Number(marketPremium)
-  return Number.isFinite(value) ? value : undefined
 }
 
 function toReportReference(
@@ -125,7 +118,6 @@ export function buildAnalysisSession(
     reference: toReportReference(reference),
     pauseReasons,
     selectedWeeks: knobs.horizon,
-    marketPremiumPerShare: parseOptionalPremium(knobs.marketPremium),
     premiumAssumptions: resolvePremiumAssumptions(
       knobs.annualCapitalReturnRatePct,
     ),

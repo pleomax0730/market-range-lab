@@ -139,7 +139,7 @@ http://127.0.0.1:4173
 3. Light Tail Floor（+10% × (CVaR95 − mean)）  
 4. Conservative Tail Floor（+25% × (CVaR95 − mean)）
 
-可手動輸入可成交 net premium 做相對位置比較；**不會**改寫 Safety Grade，也**不是**「便宜可賣」的證明。上檔／Naked Call 不計算 Premium 下限（損失理論無上界）。
+上檔／Naked Call 不計算 Premium 下限（損失理論無上界）。
 
 ## 專案結構
 

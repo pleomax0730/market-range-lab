@@ -77,20 +77,10 @@ export function App() {
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
     dashboardDefaults.candidateSide,
   );
-  const [marketPremiumEntry, setMarketPremiumEntry] = useState({
-    scope: "",
-    value: "",
-  });
   const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
     dashboardDefaults.annualCapitalReturnRatePct,
   );
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const premiumInputScope = `${activeId ?? ""}|${candidate}|${candidateSide}|${horizon}`;
-  const marketPremium = marketPremiumEntry.scope === premiumInputScope
-    ? marketPremiumEntry.value
-    : "";
-  const setMarketPremium = (value: string) =>
-    setMarketPremiumEntry({ scope: premiumInputScope, value });
   const referencePrice = useReferencePrice({
     symbol: active?.symbol,
     fallbackPrice: active?.bars.at(-1)?.close,
@@ -150,16 +140,9 @@ export function App() {
       horizon,
       candidate,
       candidateSide,
-      marketPremium,
       annualCapitalReturnRatePct,
     }),
-    [
-      annualCapitalReturnRatePct,
-      candidate,
-      candidateSide,
-      horizon,
-      marketPremium,
-    ],
+    [annualCapitalReturnRatePct, candidate, candidateSide, horizon],
   );
   const {
     report,
@@ -632,8 +615,6 @@ export function App() {
                       <CandidateResult
                         candidate={candidateResult}
                         anchorPrice={anchorPrice}
-                        marketPremium={marketPremium}
-                        onMarketPremiumChange={setMarketPremium}
                         annualCapitalReturnRatePct={annualCapitalReturnRatePct}
                         onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
                       />
@@ -999,15 +980,11 @@ function BacktestSummary({ analysis }: { analysis: HorizonAnalysis }) {
 function CandidateResult({
   candidate,
   anchorPrice,
-  marketPremium,
-  onMarketPremiumChange,
   annualCapitalReturnRatePct,
   onAnnualCapitalReturnRatePctChange,
 }: {
   candidate: CandidateAnalysis;
   anchorPrice: number;
-  marketPremium: string;
-  onMarketPremiumChange: (value: string) => void;
   annualCapitalReturnRatePct: string;
   onAnnualCapitalReturnRatePctChange: (value: string) => void;
 }) {
@@ -1055,8 +1032,6 @@ function CandidateResult({
       </div>
       <PremiumAnalysisPanel
         candidate={candidate}
-        marketPremium={marketPremium}
-        onMarketPremiumChange={onMarketPremiumChange}
         annualCapitalReturnRatePct={annualCapitalReturnRatePct}
         onAnnualCapitalReturnRatePctChange={onAnnualCapitalReturnRatePctChange}
       />

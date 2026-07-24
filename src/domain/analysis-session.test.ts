@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAnalysisSession,
   isHistoryStale,
-  parseOptionalPremium,
   resolvePremiumAssumptions,
 } from './analysis-session'
 import type { HistoryDataset } from './types'
@@ -66,7 +65,6 @@ describe('buildAnalysisSession', () => {
         horizon: 2,
         candidate: '90',
         candidateSide: 'lower',
-        marketPremium: '1.5',
         annualCapitalReturnRatePct: '12',
       },
     )
@@ -82,7 +80,6 @@ describe('buildAnalysisSession', () => {
       side: 'lower',
     })
     expect(plan.context?.premiumAssumptions.annualCapitalReturnRate).toBe(0.12)
-    expect(plan.context?.marketPremiumPerShare).toBe(1.5)
     expect(plan.modelKey).toContain(active.id)
     expect(plan.analysisKey).toContain('price=104')
   })
@@ -106,7 +103,6 @@ describe('buildAnalysisSession', () => {
         horizon: 1,
         candidate: '',
         candidateSide: 'lower',
-        marketPremium: '',
         annualCapitalReturnRatePct: '10',
       },
     )
@@ -118,9 +114,7 @@ describe('buildAnalysisSession', () => {
 })
 
 describe('premium knobs', () => {
-  it('parses premium and capital-return overrides', () => {
-    expect(parseOptionalPremium('')).toBeUndefined()
-    expect(parseOptionalPremium('2.5')).toBe(2.5)
+  it('parses capital-return overrides', () => {
     expect(resolvePremiumAssumptions('20').annualCapitalReturnRate).toBe(0.2)
     expect(resolvePremiumAssumptions('').annualCapitalReturnRate).toBe(0.1)
   })

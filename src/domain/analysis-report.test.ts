@@ -58,7 +58,6 @@ describe('Analysis Report', () => {
       },
       pauseReasons: ['stale-history'],
       selectedWeeks: 1,
-      marketPremiumPerShare: 1.25,
       premiumAssumptions: {
         ...DEFAULT_PREMIUM_ASSUMPTIONS,
         annualCapitalReturnRate: 0.15,
@@ -72,14 +71,14 @@ describe('Analysis Report', () => {
     expect(exported.candidate.result.grade).toBe(report.candidate?.result.grade)
     expect(exported.candidate.premium).toEqual(report.candidate?.premium)
     expect(exported.candidate.premium.annualCapitalReturnRate).toBe(0.15)
-    expect(exported.marketPremiumPerShare).toBe(1.25)
-    expect(exported.premiumOfferStatus).toBe(report.premiumOfferStatus)
+    expect(exported.marketPremiumPerShare).toBeUndefined()
+    expect(exported.premiumOfferStatus).toBeUndefined()
     expect(exported.analyses[0].lower).toEqual(report.analyses[0].lower)
     expect(exported.pauseReasons).toEqual(['stale-history'])
     expect(exported.dataset.bars).toBeUndefined()
     expect(exportedCsv).toContain('"candidateGrade"')
     expect(exportedCsv).toContain('"candidatePremiumStatisticalFloor"')
-    expect(exportedCsv).toContain('"candidateMarketPremiumPerShare"')
+    expect(exportedCsv).not.toContain('"candidateMarketPremiumPerShare"')
     expect(exportedCsv).toContain('"insufficient"')
     expect(report.dataset.interval).toBe('weekly')
   })

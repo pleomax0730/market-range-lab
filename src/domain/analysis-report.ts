@@ -2,9 +2,7 @@ import { analyzeHistory, extractModeledPaths, type AnalysisInput } from './analy
 import { GRADE_THRESHOLDS, MODEL_VERSION } from './model'
 import {
   calculatePutPremiumAnalysis,
-  classifyPremiumOffer,
   repricePutPremiumAnalysis,
-  type PremiumOfferStatus,
   type PremiumAssumptions,
   type PutPremiumAnalysis,
 } from './premium-analysis'
@@ -67,7 +65,6 @@ export type AnalysisReportContext = {
   }
   pauseReasons: string[]
   selectedWeeks: number
-  marketPremiumPerShare?: number
   premiumAssumptions: PremiumAssumptions
 }
 
@@ -92,8 +89,6 @@ export type AnalysisReport = {
   pauseReasons: string[]
   selectedWeeks: number
   candidate?: CandidateAnalysis
-  marketPremiumPerShare?: number
-  premiumOfferStatus?: PremiumOfferStatus
   analyses: HorizonAnalysis[]
 }
 
@@ -213,14 +208,6 @@ export function composeAnalysisReport(
   const candidate = statistical.candidate
     ? { ...statistical.candidate, premium: adjustedPremium }
     : undefined
-  const marketPremiumPerShare = context.marketPremiumPerShare !== undefined &&
-    Number.isFinite(context.marketPremiumPerShare) &&
-    context.marketPremiumPerShare >= 0
-      ? context.marketPremiumPerShare
-      : undefined
-  const premiumOfferStatus = marketPremiumPerShare !== undefined && candidate?.premium
-    ? classifyPremiumOffer(marketPremiumPerShare, candidate.premium)
-    : undefined
   return {
     modelVersion: MODEL_VERSION,
     thresholds: GRADE_THRESHOLDS,
@@ -238,8 +225,6 @@ export function composeAnalysisReport(
     pauseReasons: context.pauseReasons,
     selectedWeeks: context.selectedWeeks,
     candidate,
-    marketPremiumPerShare,
-    premiumOfferStatus,
     analyses: statistical.analyses,
   }
 }
@@ -379,8 +364,6 @@ function reportRows(report: AnalysisReport) {
         candidatePremiumCapitalReturnFloor: report.candidate?.premium?.capitalReturnFloorPerShare ?? '',
         candidatePremiumLightTailFloor: report.candidate?.premium?.lightTailFloorPerShare ?? '',
         candidatePremiumConservativeTailFloor: report.candidate?.premium?.conservativeTailFloorPerShare ?? '',
-        candidateMarketPremiumPerShare: report.marketPremiumPerShare ?? '',
-        candidatePremiumOfferStatus: report.premiumOfferStatus ?? '',
       })),
     ),
   )

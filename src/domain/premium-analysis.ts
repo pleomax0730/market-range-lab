@@ -42,14 +42,6 @@ export type PutPremiumAnalysis = {
   conservativeTailFloorPerShare: number
 }
 
-export type PremiumOfferStatus =
-  | 'insufficient-evidence'
-  | 'below-statistical'
-  | 'statistical-only'
-  | 'capital-return'
-  | 'light-tail'
-  | 'conservative-tail'
-
 type PutPremiumAnalysisInput = {
   anchorPrice: number
   strike: number
@@ -227,15 +219,4 @@ export function repricePutPremiumAnalysis(
   }
 }
 
-export function classifyPremiumOffer(
-  premiumPerShare: number,
-  analysis: PutPremiumAnalysis,
-): PremiumOfferStatus | undefined {
-  if (!Number.isFinite(premiumPerShare) || premiumPerShare < 0) return undefined
-  if (!hasSufficientPremiumEvidence(analysis)) return 'insufficient-evidence'
-  if (premiumPerShare >= analysis.conservativeTailFloorPerShare) return 'conservative-tail'
-  if (premiumPerShare >= analysis.lightTailFloorPerShare) return 'light-tail'
-  if (premiumPerShare >= analysis.capitalReturnFloorPerShare) return 'capital-return'
-  if (premiumPerShare >= analysis.statisticalFloorPerShare) return 'statistical-only'
-  return 'below-statistical'
-}
+

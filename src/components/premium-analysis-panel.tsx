@@ -1,9 +1,7 @@
 import type { CandidateAnalysis } from '../domain/analysis-report'
 import {
-  classifyPremiumOffer,
   hasSufficientPremiumEvidence,
   MIN_EFFECTIVE_PREMIUM_LOSS_EVENTS,
-  type PremiumOfferStatus,
 } from '../domain/premium-analysis'
 import { TermHelp } from './term-help'
 import { Input } from './ui/input'
@@ -23,15 +21,13 @@ function PremiumThreshold({
   label,
   explanation,
   value,
-  emphasis = false,
 }: {
   label: string
   explanation: string
   value: number
-  emphasis?: boolean
 }) {
   return (
-    <div className={`min-w-0 px-3 py-3 ${emphasis ? 'bg-[#F4F8FF]' : ''}`}>
+    <div className="min-w-0 px-3 py-3">
       <span className="block text-[11px] font-semibold text-[#565656]">
         <TermHelp explanation={explanation}>{label}</TermHelp>
       </span>
@@ -43,25 +39,12 @@ function PremiumThreshold({
   )
 }
 
-const premiumStatusLabels: Record<PremiumOfferStatus, string> = {
-  'insufficient-evidence': '尾端證據不足，無法判斷報價是否有吸引力',
-  'below-statistical': '低於歷史統計賠付參考',
-  'statistical-only': '高於歷史統計賠付參考',
-  'capital-return': '高於資金報酬參考',
-  'light-tail': '高於輕度壓力參考',
-  'conservative-tail': '高於保守壓力參考',
-}
-
 export function PremiumAnalysisPanel({
   candidate,
-  marketPremium,
-  onMarketPremiumChange,
   annualCapitalReturnRatePct,
   onAnnualCapitalReturnRatePctChange,
 }: {
   candidate: CandidateAnalysis
-  marketPremium: string
-  onMarketPremiumChange: (value: string) => void
   annualCapitalReturnRatePct: string
   onAnnualCapitalReturnRatePctChange: (value: string) => void
 }) {
@@ -76,11 +59,6 @@ export function PremiumAnalysisPanel({
     )
   }
 
-  const marketPremiumNumber = Number(marketPremium)
-  const status = marketPremium.trim() && Number.isFinite(marketPremiumNumber) && marketPremiumNumber >= 0
-    ? classifyPremiumOffer(marketPremiumNumber, premium)
-    : undefined
-  const belowFloor = status === 'below-statistical'
   const insufficientEvidence = !hasSufficientPremiumEvidence(premium)
   const annualRateInputValid = annualCapitalReturnRatePct.trim() !== '' &&
     Number.isFinite(Number(annualCapitalReturnRatePct)) &&
@@ -102,12 +80,12 @@ export function PremiumAnalysisPanel({
 
       {insufficientEvidence && (
         <p role="alert" className="mt-3 border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-          有效受損事件約 {premium.effectiveLossEventCount.toFixed(1)} 個，少於證據閘門 {MIN_EFFECTIVE_PREMIUM_LOSS_EVENTS} 個；{premium.lossEventCount === 0 ? 'Bootstrap 與 CVaR 無法推估未觀察的跳空尾端。' : '條件賠付與尾端統計仍不穩定。'} 即使券商報價高於下列參考，也不判定為便宜或值得賣出。
+          有效受損事件約 {premium.effectiveLossEventCount.toFixed(1)} 個，少於證據閘門 {MIN_EFFECTIVE_PREMIUM_LOSS_EVENTS} 個；{premium.lossEventCount === 0 ? 'Bootstrap 與 CVaR 無法推估未觀察的跳空尾端。' : '條件賠付與尾端統計仍不穩定。'} 下列參考僅供歷史重播對照，不是便宜或值得賣出的判定。
         </p>
       )}
 
       <p className="mt-3 border-l-2 border-[#A3FF3F] pl-3 text-xs leading-5 text-[#565656]">
-        券商報價反映當下 IV、波動率偏斜、流動性與供需；本區沒有使用 option chain，因此市場報價高於或低於歷史參考都屬正常，不能據此判定錯價。
+        本區沒有使用 option chain 或可成交報價；券商報價受 IV、偏斜與流動性影響，與歷史參考不同屬正常。
       </p>
 
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
@@ -193,38 +171,6 @@ export function PremiumAnalysisPanel({
         </p>
         <p className="mt-1 text-[#6B7280]">
           尾端加價 = 權重 × (CVaR95 − 歷史平均賠付)，權重分別為 {percent.format(premium.lightTailWeight)} 與 {percent.format(premium.conservativeTailWeight)}。
-        </p>
-      </div>
-
-      <div className="mt-3 grid items-end gap-2 border-t border-[#EFEFEF] pt-3 sm:grid-cols-[180px_1fr]">
-        <label>
-          <span className="field-label"><TermHelp explanation="Sell Put 應使用你實際可能成交的 bid 或限價成交值，再扣除佣金與費用；不要直接拿 ask、last 或無法成交的 mid 比較。">預估可成交淨權利金 / 股（選填）</TermHelp></span>
-          <Input
-            className="num"
-            type="number"
-            aria-label="預估可成交淨權利金 / 股（選填）"
-            min="0"
-            step="0.01"
-            placeholder="例如 1.25"
-            value={marketPremium}
-            onChange={(event) => onMarketPremiumChange(event.target.value)}
-          />
-        </label>
-        <p
-          aria-live="polite"
-          className={`min-h-10 rounded border px-3 py-2 text-xs ${
-            status
-              ? belowFloor
-                ? 'border-red-200 bg-red-50 font-semibold text-red-800'
-                : status === 'insufficient-evidence'
-                  ? 'border-amber-300 bg-amber-50 font-semibold text-amber-900'
-                  : 'border-[#D6D6D6] bg-[#FAFAFA] font-semibold text-[#333333]'
-              : 'border-[#E5E5E5] bg-[#FAFAFA] text-[#6B7280]'
-          }`}
-        >
-          {status
-            ? `${money.format(marketPremiumNumber)}：${premiumStatusLabels[status]}。${status === 'insufficient-evidence' ? '' : '這只表示相對於歷史重播參考的位置，不是 Sell Put 訊號。'}`
-            : '輸入預計可成交的淨 bid／limit（扣除費用），只比較歷史參考位置。'}
         </p>
       </div>
     </div>

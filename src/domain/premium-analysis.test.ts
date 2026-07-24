@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculatePutPremiumAnalysis,
-  classifyPremiumOffer,
   DEFAULT_PREMIUM_ASSUMPTIONS,
   repricePutPremiumAnalysis,
 } from './premium-analysis'
@@ -72,26 +71,7 @@ describe('calculatePutPremiumAnalysis', () => {
     })).toBeUndefined()
   })
 
-  it('classifies an executable premium without recomputing paths', () => {
-    const analysis = calculatePutPremiumAnalysis({
-      anchorPrice: 100,
-      strike: 95,
-      anchorDate: '2026-07-21',
-      targetDate: '2026-07-24',
-      paths: Array.from({ length: 100 }, (_, index) => ({
-        closeReturn: index < 30 ? -0.1 : 0,
-        lowReturn: -0.1,
-        highReturn: 0.1,
-      })),
-    })!
-
-    expect(classifyPremiumOffer(0, analysis)).toBe('below-statistical')
-    expect(classifyPremiumOffer(analysis.statisticalFloorPerShare, analysis)).toBe('statistical-only')
-    expect(classifyPremiumOffer(analysis.conservativeTailFloorPerShare, analysis)).toBe('conservative-tail')
-    expect(classifyPremiumOffer(-1, analysis)).toBeUndefined()
-  })
-
-  it('does not turn a sparse historical tail into a positive premium signal', () => {
+  it('marks sparse historical tails as insufficient premium evidence', () => {
     const analysis = calculatePutPremiumAnalysis({
       anchorPrice: 100,
       strike: 80,
@@ -106,7 +86,7 @@ describe('calculatePutPremiumAnalysis', () => {
     })!
 
     expect(analysis.effectiveLossEventCount).toBe(0)
-    expect(classifyPremiumOffer(10, analysis)).toBe('insufficient-evidence')
+    expect(analysis.lossEventCount).toBe(0)
   })
 
   it('reprices the capital hurdle without changing historical loss statistics', () => {
