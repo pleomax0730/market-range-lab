@@ -82,11 +82,35 @@ export type BacktestResult = {
   expirationRate: number
   pathTouchBreaches: number
   pathTouchRate: number
+  recovery?: AssignmentRecoverySummary
+}
+
+export type RecoveryWindowResult = {
+  periods: number
+  eligibleAssignments: number
+  recoveredAssignments: number
+  recoveryRate: number
+}
+
+export type AssignmentRecoverySummary = {
+  periodUnit: 'trading-session' | 'week'
+  assignmentEvents: number
+  recoveredEvents: number
+  unrecoveredEvents: number
+  medianPeriods?: number
+  p75Periods?: number
+  maximumPeriods?: number
+  medianCalendarDays?: number
+  p75CalendarDays?: number
+  maximumCalendarDays?: number
+  windows: RecoveryWindowResult[]
 }
 
 export type HorizonBacktest = {
   method: string
   minimumTrainingPaths: number
+  predictionStartDate?: string
+  predictionEndDate?: string
   lower: {
     conservative: BacktestResult
     safe: BacktestResult

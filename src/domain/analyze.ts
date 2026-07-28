@@ -9,6 +9,7 @@ import {
   type HistoricalPath,
 } from './statistics'
 import type {
+  AssignmentRecoverySummary,
   BacktestResult,
   HorizonAnalysis,
   HorizonBacktest,
@@ -98,6 +99,10 @@ function extractWeeklyMatchedPaths(
       lowReturn: Math.min(...window.map((bar) => bar.low)) / base - 1,
       highReturn: Math.max(...window.map((bar) => bar.high)) / base - 1,
       startVolatility: volatilityProfile[intraday ? startIndex - 1 : startIndex],
+      startDate: start.date,
+      targetDate: target.date,
+      basePrice: base,
+      targetIndex,
     })
   })
   return paths
@@ -132,6 +137,10 @@ function extractMatchedPathsWithProfile(
       lowReturn: Math.min(...window.map((bar) => bar.low)) / base - 1,
       highReturn: Math.max(...window.map((bar) => bar.high)) / base - 1,
       startVolatility: volatilityProfile[intraday ? startIndex - 1 : startIndex],
+      startDate: start.date,
+      targetDate: target.date,
+      basePrice: base,
+      targetIndex,
     })
   })
   return paths
@@ -420,15 +429,89 @@ function conservativeEstimate(
   }
 }
 
-function createBacktestResult(): BacktestResult {
-  return { predictions: 0, expirationBreaches: 0, expirationRate: 0, pathTouchBreaches: 0, pathTouchRate: 0 }
+type RecoveryObservation = {
+  recoveredAfterPeriods?: number
+  recoveryCalendarDays?: number
+  availableFollowUpPeriods: number
 }
 
-function finalizeBacktestResult(result: BacktestResult): BacktestResult {
+type BacktestAccumulator = Omit<BacktestResult, 'recovery'> & {
+  recoveryEnabled: boolean
+  recoveryObservations: RecoveryObservation[]
+}
+
+function createBacktestResult(recoveryEnabled = false): BacktestAccumulator {
   return {
-    ...result,
+    predictions: 0,
+    expirationBreaches: 0,
+    expirationRate: 0,
+    pathTouchBreaches: 0,
+    pathTouchRate: 0,
+    recoveryEnabled,
+    recoveryObservations: [],
+  }
+}
+
+function recoverySummary(
+  observations: RecoveryObservation[],
+  interval: 'daily' | 'weekly',
+): AssignmentRecoverySummary {
+  const recovered = observations.filter(
+    (observation): observation is RecoveryObservation & {
+      recoveredAfterPeriods: number
+      recoveryCalendarDays: number
+    } => observation.recoveredAfterPeriods !== undefined && observation.recoveryCalendarDays !== undefined,
+  )
+  const periods = recovered.map((observation) => observation.recoveredAfterPeriods)
+  const calendarDays = recovered.map((observation) => observation.recoveryCalendarDays)
+  const windowPeriods = interval === 'daily' ? [5, 20, 60] : [1, 4, 13]
+  return {
+    periodUnit: interval === 'daily' ? 'trading-session' : 'week',
+    assignmentEvents: observations.length,
+    recoveredEvents: recovered.length,
+    unrecoveredEvents: observations.length - recovered.length,
+    ...(periods.length
+      ? {
+          medianPeriods: quantile(periods, 0.5),
+          p75Periods: quantile(periods, 0.75),
+          maximumPeriods: Math.max(...periods),
+          medianCalendarDays: quantile(calendarDays, 0.5),
+          p75CalendarDays: quantile(calendarDays, 0.75),
+          maximumCalendarDays: Math.max(...calendarDays),
+        }
+      : {}),
+    windows: windowPeriods.map((window) => {
+      const eligible = observations.filter((observation) =>
+        (observation.recoveredAfterPeriods !== undefined && observation.recoveredAfterPeriods <= window) ||
+        observation.availableFollowUpPeriods >= window,
+      )
+      const recoveredWithinWindow = eligible.filter(
+        (observation) =>
+          observation.recoveredAfterPeriods !== undefined && observation.recoveredAfterPeriods <= window,
+      ).length
+      return {
+        periods: window,
+        eligibleAssignments: eligible.length,
+        recoveredAssignments: recoveredWithinWindow,
+        recoveryRate: eligible.length ? recoveredWithinWindow / eligible.length : 0,
+      }
+    }),
+  }
+}
+
+function finalizeBacktestResult(
+  result: BacktestAccumulator,
+  interval: 'daily' | 'weekly',
+): BacktestResult {
+  return {
+    predictions: result.predictions,
+    expirationBreaches: result.expirationBreaches,
     expirationRate: result.predictions ? result.expirationBreaches / result.predictions : 0,
+    pathTouchBreaches: result.pathTouchBreaches,
     pathTouchRate: result.predictions ? result.pathTouchBreaches / result.predictions : 0,
+    ...(result.recoveryEnabled
+      ? { recovery: recoverySummary(result.recoveryObservations, interval) }
+      : {}),
   }
 }
 
@@ -486,10 +569,40 @@ function backtestBoundaries(rawPaths: HistoricalPath[], trainingLength: number, 
   }
 }
 
-function updateBacktestResult(result: BacktestResult, actual: HistoricalPath, side: 'lower' | 'upper', boundary: number) {
+function recordRecoveryObservation(
+  result: BacktestAccumulator,
+  actual: HistoricalPath,
+  boundary: number,
+  bars: PriceBar[],
+) {
+  if (actual.basePrice === undefined || actual.targetIndex === undefined || !actual.targetDate) return
+  const strike = actual.basePrice * (1 + boundary)
+  const availableFollowUpPeriods = Math.max(0, bars.length - actual.targetIndex - 1)
+  for (let index = actual.targetIndex + 1; index < bars.length; index += 1) {
+    if (bars[index].close < strike) continue
+    result.recoveryObservations.push({
+      recoveredAfterPeriods: index - actual.targetIndex,
+      recoveryCalendarDays: differenceInCalendarDays(parseISO(bars[index].date), parseISO(actual.targetDate)),
+      availableFollowUpPeriods,
+    })
+    return
+  }
+  result.recoveryObservations.push({ availableFollowUpPeriods })
+}
+
+function updateBacktestResult(
+  result: BacktestAccumulator,
+  actual: HistoricalPath,
+  side: 'lower' | 'upper',
+  boundary: number,
+  bars?: PriceBar[],
+) {
   result.predictions += 1
   if (side === 'lower') {
-    if (actual.closeReturn <= boundary) result.expirationBreaches += 1
+    if (actual.closeReturn <= boundary) {
+      result.expirationBreaches += 1
+      if (bars && result.recoveryEnabled) recordRecoveryObservation(result, actual, boundary, bars)
+    }
     if (actual.lowReturn <= boundary) result.pathTouchBreaches += 1
   } else {
     if (actual.closeReturn >= boundary) result.expirationBreaches += 1
@@ -497,30 +610,47 @@ function updateBacktestResult(result: BacktestResult, actual: HistoricalPath, si
   }
 }
 
-export function backtestHistoricalPaths(rawPaths: HistoricalPath[], weeks: number, interval: 'daily' | 'weekly'): HorizonBacktest | undefined {
+export function backtestHistoricalPaths(
+  rawPaths: HistoricalPath[],
+  weeks: number,
+  interval: 'daily' | 'weekly',
+  bars?: PriceBar[],
+): HorizonBacktest | undefined {
   if (weeks > 4 || rawPaths.length <= MINIMUM_BACKTEST_TRAINING_PATHS) return undefined
+  const recoveryEnabled = Boolean(
+    bars?.length && rawPaths.every((path) =>
+      path.basePrice !== undefined && path.targetIndex !== undefined && path.targetDate !== undefined,
+    ),
+  )
   const result = {
-    lower: { conservative: createBacktestResult(), safe: createBacktestResult() },
+    lower: {
+      conservative: createBacktestResult(recoveryEnabled),
+      safe: createBacktestResult(recoveryEnabled),
+    },
     upper: { conservative: createBacktestResult(), safe: createBacktestResult() },
   }
   for (let index = MINIMUM_BACKTEST_TRAINING_PATHS; index < rawPaths.length; index += 1) {
     const actual = rawPaths[index]
     const boundaries = backtestBoundaries(rawPaths, index, actual.startVolatility)
     for (const grade of ['conservative', 'safe'] as const) {
-      updateBacktestResult(result.lower[grade], actual, 'lower', boundaries.lower[grade])
+      updateBacktestResult(result.lower[grade], actual, 'lower', boundaries.lower[grade], bars)
       updateBacktestResult(result.upper[grade], actual, 'upper', boundaries.upper[grade])
     }
   }
   return {
     method: `Expanding-window out-of-sample quantile backtest with ${interval} volatility scaling`,
     minimumTrainingPaths: MINIMUM_BACKTEST_TRAINING_PATHS,
+    ...(rawPaths[MINIMUM_BACKTEST_TRAINING_PATHS]?.startDate
+      ? { predictionStartDate: rawPaths[MINIMUM_BACKTEST_TRAINING_PATHS].startDate }
+      : {}),
+    ...(rawPaths.at(-1)?.startDate ? { predictionEndDate: rawPaths.at(-1)!.startDate } : {}),
     lower: {
-      conservative: finalizeBacktestResult(result.lower.conservative),
-      safe: finalizeBacktestResult(result.lower.safe),
+      conservative: finalizeBacktestResult(result.lower.conservative, interval),
+      safe: finalizeBacktestResult(result.lower.safe, interval),
     },
     upper: {
-      conservative: finalizeBacktestResult(result.upper.conservative),
-      safe: finalizeBacktestResult(result.upper.safe),
+      conservative: finalizeBacktestResult(result.upper.conservative, interval),
+      safe: finalizeBacktestResult(result.upper.safe, interval),
     },
   }
 }
@@ -600,7 +730,7 @@ export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
         upper: rawUpperConservative,
       },
       volatilityAdjustment: modeled.volatility,
-      backtest: backtestHistoricalPaths(modeled.raw, weeks, interval),
+      backtest: backtestHistoricalPaths(modeled.raw, weeks, interval, input.bars),
       empirical: {
         closeLowPct: quantile(rawCloses, 0.005),
         closeHighPct: quantile(rawCloses, 0.995),

@@ -88,6 +88,10 @@ _Avoid_: Model estimate, guaranteed safe price
 A calibration test in which each historical boundary is estimated only from earlier eligible paths before the next realized path is checked for expiration breach and path touch.
 _Avoid_: In-sample fit, future-data validation, guarantee
 
+**Assignment Recovery Observation**:
+For a downside boundary that experiences an Expiration Breach in an Expanding-Window Backtest, the number of subsequent Daily sessions or Weekly bars until Close first returns to or above that historical model boundary. Recovery-window rates exclude unresolved observations whose remaining history is shorter than the stated window.
+_Avoid_: Guaranteed recovery time, premium-adjusted break-even, treating right-censored observations as failures
+
 **EVT Stress Estimate**:
 A separately identified extreme-tail extrapolation used only for stress context when its fit diagnostics are acceptable; it never replaces observed extremes or determines a Safety Grade.
 _Avoid_: Primary estimate, guaranteed worst case

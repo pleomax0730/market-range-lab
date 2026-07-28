@@ -26,6 +26,7 @@ import { DownsideDistributionChart } from "./components/downside-distribution-ch
 import { EvaluationContext } from "./components/evaluation-context";
 import { PremiumAnalysisPanel } from "./components/premium-analysis-panel";
 import { RiskGradeBadge } from "./components/risk-grade-badge";
+import { BacktestSummary } from "./components/backtest-summary";
 import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
@@ -902,78 +903,6 @@ function RiskTable({
         </p>
       )}
     </div>
-  );
-}
-
-function BacktestSummary({ analysis }: { analysis: HorizonAnalysis }) {
-  if (analysis.weeks > 4) return null;
-  if (!analysis.backtest) {
-    return (
-      <div className="mt-4 border-t border-[#EFEFEF] pt-3 text-xs text-[#6B7280]">
-        <TermHelp explanation="樣本外回測每次只能使用該歷史日期以前的路徑。至少需要 500 條訓練路徑，否則 0.5% 尾部幾乎沒有可供校準的事件。">
-          樣本外回測
-        </TermHelp>{" "}
-        尚無足夠路徑（需要超過 500 條）。
-      </div>
-    );
-  }
-  const entries = [
-    { side: "lower" as const, label: "下檔 / Put", grade: "conservative" as const, gradeLabel: "保守" },
-    { side: "lower" as const, label: "下檔 / Put", grade: "safe" as const, gradeLabel: "安全" },
-    { side: "upper" as const, label: "上檔 / Call", grade: "safe" as const, gradeLabel: "安全" },
-    { side: "upper" as const, label: "上檔 / Call", grade: "conservative" as const, gradeLabel: "保守" },
-  ];
-  return (
-    <section className="mt-4 border-t border-[#EFEFEF] pt-3">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-xs font-bold">
-          <TermHelp explanation="Expanding-window 樣本外回測：在每個歷史時點，只用更早的至少 500 條路徑估計界線，再檢查下一條真實路徑。這可發現模型在不同年代是否失準，但不保證未來。">
-            歷史樣本外回測
-          </TermHelp>
-        </h4>
-        <span className="text-xs text-[#6B7280]">不使用未來資料 · 波動調整分位數</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[660px] border-collapse text-xs">
-          <thead>
-            <tr className="border-y border-[#EFEFEF] bg-[#FAFAFA] text-left text-[#6B7280]">
-              <th className="px-3 py-2">方向</th>
-              <th className="px-3 py-2">門檻</th>
-              <th className="px-3 py-2 text-right">樣本外預測</th>
-              <th className="px-3 py-2 text-right">到期實際跌破／突破</th>
-              <th className="px-3 py-2 text-right">盤中實際觸及</th>
-              <th className="px-3 py-2 text-right">歷史結果</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => {
-              const result = analysis.backtest![entry.side][entry.grade];
-              const threshold = GRADE_THRESHOLDS[entry.grade];
-              const met = result.expirationRate <= threshold.expirationUpper95 &&
-                result.pathTouchRate <= threshold.pathTouchUpper95;
-              return (
-                <tr key={`${entry.side}-${entry.grade}`} className="border-b border-[#EFEFEF]">
-                  <td className="px-3 py-2 font-medium">{entry.label}</td>
-                  <td className="px-3 py-2">{entry.gradeLabel}</td>
-                  <td className="num px-3 py-2 text-right">{result.predictions}</td>
-                  <td className="num px-3 py-2 text-right">
-                    {percent.format(result.expirationRate)} · {result.expirationBreaches}/{result.predictions}
-                  </td>
-                  <td className="num px-3 py-2 text-right">
-                    {percent.format(result.pathTouchRate)} · {result.pathTouchBreaches}/{result.predictions}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <span className={`${met ? "risk-conservative" : "risk-dangerous"} inline-flex rounded px-2 py-1 font-bold`}>
-                      {met ? "符合歷史目標" : "歷史超標"}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 

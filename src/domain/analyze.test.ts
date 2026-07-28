@@ -86,6 +86,52 @@ describe('extractMatchedPaths', () => {
     expect(result?.lower.conservative.pathTouchBreaches).toBe(5)
   })
 
+  it('summarizes assignment recovery without treating recent censored cases as failures', () => {
+    const bars = Array.from({ length: 510 }, (_, index) => {
+      const date = new Date(Date.UTC(2024, 0, 1 + index)).toISOString().slice(0, 10)
+      const close = index === 500 || index === 508 || index === 509
+        ? 90
+        : index === 501
+          ? 95
+          : 100
+      return { date, open: close, high: close, low: close, close }
+    })
+    const training = Array.from({ length: 500 }, (_, index) => ({
+      closeReturn: 0,
+      lowReturn: -0.01,
+      highReturn: 0.01,
+      startVolatility: 0.02,
+      startDate: bars[index].date,
+      targetDate: bars[index].date,
+      basePrice: 100,
+      targetIndex: index,
+    }))
+    const tests = [500, 508].map((targetIndex) => ({
+      closeReturn: -0.1,
+      lowReturn: -0.12,
+      highReturn: 0.01,
+      startVolatility: 0.02,
+      startDate: bars[targetIndex].date,
+      targetDate: bars[targetIndex].date,
+      basePrice: 100,
+      targetIndex,
+    }))
+
+    const result = backtestHistoricalPaths([...training, ...tests], 1, 'daily', bars)
+    const recovery = result?.lower.conservative.recovery
+
+    expect(recovery?.assignmentEvents).toBe(2)
+    expect(recovery?.recoveredEvents).toBe(1)
+    expect(recovery?.unrecoveredEvents).toBe(1)
+    expect(recovery?.medianPeriods).toBe(2)
+    expect(recovery?.windows[0]).toEqual({
+      periods: 5,
+      eligibleAssignments: 1,
+      recoveredAssignments: 1,
+      recoveryRate: 1,
+    })
+  })
+
   it('keeps full-history stress while widening paths for elevated current volatility', () => {
     const bars = Array.from({ length: 40 }, (_, index) => {
       const date = new Date(Date.UTC(2025, 0, 5 + index * 7)).toISOString().slice(0, 10)

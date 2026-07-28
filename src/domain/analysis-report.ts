@@ -309,6 +309,8 @@ function reportRows(report: AnalysisReport) {
         cappedVolatilityPathCount: analysis.volatilityAdjustment.cappedPathCount,
         backtestMethod: analysis.backtest?.method ?? '',
         backtestMinimumTrainingPaths: analysis.backtest?.minimumTrainingPaths ?? '',
+        backtestPredictionStartDate: analysis.backtest?.predictionStartDate ?? '',
+        backtestPredictionEndDate: analysis.backtest?.predictionEndDate ?? '',
         backtestPredictions: risk.requestedGrade
           ? (analysis.backtest?.[side][risk.requestedGrade].predictions ?? '')
           : '',
@@ -323,6 +325,39 @@ function reportRows(report: AnalysisReport) {
           : '',
         backtestTouchRate: risk.requestedGrade
           ? (analysis.backtest?.[side][risk.requestedGrade].pathTouchRate ?? '')
+          : '',
+        backtestRecoveryPeriodUnit: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.periodUnit ?? '')
+          : '',
+        backtestAssignmentEvents: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.assignmentEvents ?? '')
+          : '',
+        backtestRecoveredEvents: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.recoveredEvents ?? '')
+          : '',
+        backtestUnrecoveredEvents: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.unrecoveredEvents ?? '')
+          : '',
+        backtestRecoveryMedianPeriods: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.medianPeriods ?? '')
+          : '',
+        backtestRecoveryP75Periods: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.p75Periods ?? '')
+          : '',
+        backtestRecoveryMaximumPeriods: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.maximumPeriods ?? '')
+          : '',
+        backtestRecoveryMedianCalendarDays: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.medianCalendarDays ?? '')
+          : '',
+        backtestRecoveryP75CalendarDays: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.p75CalendarDays ?? '')
+          : '',
+        backtestRecoveryMaximumCalendarDays: risk.requestedGrade
+          ? (analysis.backtest?.[side][risk.requestedGrade].recovery?.maximumCalendarDays ?? '')
+          : '',
+        backtestRecoveryWindows: risk.requestedGrade
+          ? JSON.stringify(analysis.backtest?.[side][risk.requestedGrade].recovery?.windows ?? [])
           : '',
         pathMinPct: analysis.empirical.pathMinPct,
         pathMaxPct: analysis.empirical.pathMaxPct,

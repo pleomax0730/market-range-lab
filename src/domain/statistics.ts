@@ -6,6 +6,10 @@ export type HistoricalPath = {
   lowReturn: number
   highReturn: number
   startVolatility?: number
+  startDate?: string
+  targetDate?: string
+  basePrice?: number
+  targetIndex?: number
 }
 
 export function quantile(values: number[], probability: number) {
