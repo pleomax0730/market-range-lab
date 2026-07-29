@@ -32,6 +32,7 @@ export type AnalysisSessionKnobs = {
   horizon: number
   candidate: string
   candidateSide: 'lower' | 'upper'
+  netPremiumPerShare?: string
   annualCapitalReturnRatePct: string
 }
 
@@ -134,6 +135,13 @@ export function buildAnalysisSession(
   }
 
   const candidatePrice = Number(knobs.candidate)
+  const netPremiumText = knobs.netPremiumPerShare?.trim() ?? ''
+  const netPremiumPerShare = Number(netPremiumText)
+  const validNetPremium = knobs.candidateSide === 'lower' &&
+    netPremiumText !== '' &&
+    Number.isFinite(netPremiumPerShare) &&
+    netPremiumPerShare >= 0 &&
+    netPremiumPerShare < candidatePrice
   const reportInput: StatisticalReportInput = {
     analysis: {
       bars: dataset.bars,
@@ -147,6 +155,7 @@ export function buildAnalysisSession(
           weeks: knobs.horizon,
           price: candidatePrice,
           side: knobs.candidateSide,
+          ...(validNetPremium ? { netPremiumPerShare } : {}),
         }
       : undefined,
     gradePaused,

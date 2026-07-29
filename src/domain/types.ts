@@ -88,13 +88,18 @@ export type BacktestResult = {
 export type RecoveryWindowResult = {
   periods: number
   eligibleAssignments: number
+  effectiveEligibleAssignments?: number
   recoveredAssignments: number
   recoveryRate: number
+  lower95?: number
+  upper95?: number
 }
 
 export type AssignmentRecoverySummary = {
+  estimator: 'kaplan-meier'
   periodUnit: 'trading-session' | 'week'
   assignmentEvents: number
+  effectiveAssignmentEvents: number
   recoveredEvents: number
   unrecoveredEvents: number
   medianPeriods?: number

@@ -53,32 +53,45 @@ function RecoveryEvidence({ result }: { result: BacktestResult }) {
   }
 
   const unit = recovery.periodUnit === 'trading-session' ? '交易日' : '週'
-  const sparse = recovery.assignmentEvents < 5
+  const sparse = recovery.effectiveAssignmentEvents < 5
+  const limited = !sparse && recovery.effectiveAssignmentEvents < 20
+  const evidenceLabel = sparse
+    ? '低證據'
+    : limited
+      ? '有限證據'
+      : ''
+  const duration = (value: number | undefined) => value === undefined
+    ? '截至資料末未達'
+    : `${formatPeriods(value)} ${unit}`
   return (
     <div className="mt-3 border-t border-[#EFEFEF] pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-xs font-semibold">
-          <TermHelp explanation="只計算到期收盤低於履約價的歷史案例。解套定義為後續收盤首次重新站上模型履約價；未扣除已收權利金、費用或稅。">
-            回到履約價
+          <TermHelp explanation="只計算到期收盤低於履約價的歷史案例。價格回復定義為後續收盤首次重新站上模型履約價；Kaplan–Meier 會保留截至資料末仍未回復的右設限案例。未扣除權利金、費用或稅。">
+            歷史履約後價格回復
           </TermHelp>
         </span>
-        <span className={`text-xs ${sparse ? 'text-[#92400E]' : 'text-[#137A3D]'}`}>
-          {sparse
-            ? (
-                <TermHelp explanation="少於 5 次到期履約時，解套時間只代表少數歷史案例，不能視為穩定的時間分布。">
-                  低證據 · 僅 {recovery.assignmentEvents} 次履約
-                </TermHelp>
-              )
-            : `${recovery.assignmentEvents} 次履約事件`}
+        <span className={`text-xs ${sparse || limited ? 'text-[#92400E]' : 'text-[#137A3D]'}`}>
+          <TermHelp explanation="原始履約事件可能來自重疊的歷史路徑；有效事件數會依樣本相依性折減。有效少於 5 次為低證據，5–19 次為有限證據。">
+            {evidenceLabel ? `${evidenceLabel} · ` : ''}
+            原始 {recovery.assignmentEvents} 次 · 有效約 {recovery.effectiveAssignmentEvents.toFixed(1)} 次
+          </TermHelp>
         </span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs">
         <span>
           中位數{' '}
           <strong className="num text-sm">
-            {recovery.medianPeriods === undefined ? '—' : `${formatPeriods(recovery.medianPeriods)} ${unit}`}
+            {duration(recovery.medianPeriods)}
           </strong>
           {recovery.medianCalendarDays === undefined ? '' : ` · 約 ${formatPeriods(recovery.medianCalendarDays)} 日`}
+        </span>
+        <span>
+          P75{' '}
+          <strong className="num text-sm">
+            {duration(recovery.p75Periods)}
+          </strong>
+          {recovery.p75CalendarDays === undefined ? '' : ` · 約 ${formatPeriods(recovery.p75CalendarDays)} 日`}
         </span>
         <span>
           已回復最長{' '}
@@ -87,7 +100,7 @@ function RecoveryEvidence({ result }: { result: BacktestResult }) {
           </strong>
         </span>
         <span>
-          截至資料末仍未回復 <strong className="num">{recovery.unrecoveredEvents}/{recovery.assignmentEvents}</strong>
+          截至資料末尚未回復 <strong className="num">{recovery.unrecoveredEvents}/{recovery.assignmentEvents}</strong>
         </span>
       </div>
       <dl className="mt-2 grid grid-cols-3 gap-x-3 text-xs">
@@ -98,7 +111,11 @@ function RecoveryEvidence({ result }: { result: BacktestResult }) {
             </dt>
             <dd className="num mt-0.5 font-semibold">
               {window.eligibleAssignments
-                ? `${percent.format(window.recoveryRate)} · ${window.recoveredAssignments}/${window.eligibleAssignments}`
+                ? (
+                    <TermHelp explanation={`原始 ${window.recoveredAssignments}/${window.eligibleAssignments}；重疊路徑修正後有效分母約 ${window.effectiveEligibleAssignments?.toFixed(1) ?? '—'}。近似雙側 95% 區間 ${window.lower95 === undefined ? '—' : percent.format(window.lower95)}–${window.upper95 === undefined ? '—' : percent.format(window.upper95)}。`}>
+                      {percent.format(window.recoveryRate)} · {window.recoveredAssignments}/{window.eligibleAssignments}
+                    </TermHelp>
+                  )
                 : '—'}
             </dd>
           </div>

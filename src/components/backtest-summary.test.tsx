@@ -17,8 +17,10 @@ const backtest: HorizonBacktest = {
       pathTouchBreaches: 0,
       pathTouchRate: 0,
       recovery: {
+        estimator: 'kaplan-meier',
         periodUnit: 'trading-session',
         assignmentEvents: 0,
+        effectiveAssignmentEvents: 0,
         recoveredEvents: 0,
         unrecoveredEvents: 0,
         windows: [5, 20, 60].map((periods) => ({
@@ -36,8 +38,10 @@ const backtest: HorizonBacktest = {
       pathTouchBreaches: 4,
       pathTouchRate: 4 / 273,
       recovery: {
+        estimator: 'kaplan-meier',
         periodUnit: 'trading-session',
         assignmentEvents: 2,
+        effectiveAssignmentEvents: 2,
         recoveredEvents: 2,
         unrecoveredEvents: 0,
         medianPeriods: 2,
@@ -86,8 +90,10 @@ describe('BacktestSummary', () => {
     expect(screen.getByText('Put · 安全')).toBeInTheDocument()
     expect(screen.getByText('0.73%')).toBeInTheDocument()
     expect(screen.getByText('2 交易日')).toBeInTheDocument()
-    expect(screen.getByText('低證據 · 僅 2 次履約')).toBeInTheDocument()
-    expect(screen.getByText('截至資料末仍未回復')).toBeInTheDocument()
+    expect(screen.getAllByText((_content, element) =>
+      element?.textContent === '低證據 · 原始 2 次 · 有效約 2.0 次',
+    )).toHaveLength(2)
+    expect(screen.getByText('截至資料末尚未回復')).toBeInTheDocument()
     expect(screen.getAllByText('回測頻率達標')).toHaveLength(4)
   })
 

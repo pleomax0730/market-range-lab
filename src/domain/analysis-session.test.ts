@@ -65,6 +65,7 @@ describe('buildAnalysisSession', () => {
         horizon: 2,
         candidate: '90',
         candidateSide: 'lower',
+        netPremiumPerShare: '1.25',
         annualCapitalReturnRatePct: '12',
       },
     )
@@ -78,6 +79,7 @@ describe('buildAnalysisSession', () => {
       weeks: 2,
       price: 90,
       side: 'lower',
+      netPremiumPerShare: 1.25,
     })
     expect(plan.context?.premiumAssumptions.annualCapitalReturnRate).toBe(0.12)
     expect(plan.modelKey).toContain(active.id)
@@ -103,6 +105,7 @@ describe('buildAnalysisSession', () => {
         horizon: 1,
         candidate: '',
         candidateSide: 'lower',
+        netPremiumPerShare: '',
         annualCapitalReturnRatePct: '10',
       },
     )

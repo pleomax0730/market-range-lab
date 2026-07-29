@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BarChart3,
   Check,
+  ChevronDown,
   Database,
   Download,
   FileUp,
@@ -25,8 +26,10 @@ import { TermHelp } from "./components/term-help";
 import { DownsideDistributionChart } from "./components/downside-distribution-chart";
 import { EvaluationContext } from "./components/evaluation-context";
 import { PremiumAnalysisPanel } from "./components/premium-analysis-panel";
+import { CandidateRecoveryPanel } from "./components/candidate-recovery-panel";
 import { RiskGradeBadge } from "./components/risk-grade-badge";
 import { BacktestSummary } from "./components/backtest-summary";
+import { PutDecisionSummary } from "./components/put-decision-summary";
 import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
@@ -78,10 +81,12 @@ export function App() {
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
     dashboardDefaults.candidateSide,
   );
+  const [netPremiumPerShare, setNetPremiumPerShare] = useState("");
   const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
     dashboardDefaults.annualCapitalReturnRatePct,
   );
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [mobileDataToolsOpen, setMobileDataToolsOpen] = useState(false);
   const referencePrice = useReferencePrice({
     symbol: active?.symbol,
     fallbackPrice: active?.bars.at(-1)?.close,
@@ -141,9 +146,10 @@ export function App() {
       horizon,
       candidate,
       candidateSide,
+      netPremiumPerShare,
       annualCapitalReturnRatePct,
     }),
-    [annualCapitalReturnRatePct, candidate, candidateSide, horizon],
+    [annualCapitalReturnRatePct, candidate, candidateSide, horizon, netPremiumPerShare],
   );
   const {
     report,
@@ -185,16 +191,16 @@ export function App() {
     <div className="min-h-screen bg-[#F8F8F8]">
       <header className="border-b border-[#E5E5E5] bg-white">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-3 lg:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded bg-[#0D0D0D] text-[#B5FF4D]">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded bg-[#0D0D0D] text-[#B5FF4D] sm:size-9">
               <BarChart3 size={19} />
             </div>
-            <div>
-              <h1 className="text-[17px] font-bold">Market Range Lab</h1>
-              <p className="text-xs text-[#6B7280]">歷史路徑與到期價格區間</p>
+            <div className="min-w-0">
+              <h1 className="truncate whitespace-nowrap text-[15px] font-bold sm:text-[17px]">Market Range Lab</h1>
+              <p className="hidden text-xs text-[#6B7280] sm:block">歷史路徑與到期價格區間</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="hidden gap-2 sm:flex">
             <Button
               variant="outline"
               size="sm"
@@ -212,11 +218,63 @@ export function App() {
               <Download size={15} /> JSON
             </Button>
           </div>
+          {report && !analysisLoading ? (
+            <details className="group relative sm:hidden">
+              <summary className="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-[#E5E5E5] bg-white outline-none transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-600 [&::-webkit-details-marker]:hidden" aria-label="匯出分析">
+                <Download size={16} />
+              </summary>
+              <div className="ui-enter absolute right-0 z-30 mt-2 w-36 rounded-md bg-white p-1 shadow-[0_8px_24px_rgba(13,13,13,0.14)]">
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center gap-2 rounded px-3 text-left text-sm font-semibold outline-none transition-colors duration-150 hover:bg-[#F0F0F0] focus-visible:bg-[#F0F0F0]"
+                  onClick={(event) => {
+                    exportResults("csv");
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                  }}
+                >
+                  <Download size={14} /> CSV
+                </button>
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center gap-2 rounded px-3 text-left text-sm font-semibold outline-none transition-colors duration-150 hover:bg-[#F0F0F0] focus-visible:bg-[#F0F0F0]"
+                  onClick={(event) => {
+                    exportResults("json");
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                  }}
+                >
+                  <Download size={14} /> JSON
+                </button>
+              </div>
+            </details>
+          ) : (
+            <Button variant="outline" size="icon" className="sm:hidden" disabled aria-label="匯出分析">
+              <Download size={16} />
+            </Button>
+          )}
         </div>
       </header>
 
       <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-4 p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:p-6">
-        <aside className="space-y-4">
+        <aside className="order-1 space-y-4 lg:order-1">
+          {active && (
+            <Button
+              variant="outline"
+              className="w-full justify-between lg:hidden"
+              aria-expanded={mobileDataToolsOpen}
+              aria-controls="mobile-data-tools"
+              onClick={() => setMobileDataToolsOpen((open) => !open)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Database size={16} />
+                <span>資料與匯入</span>
+              </span>
+              <span className="ml-auto flex items-center gap-2 text-xs text-[#565656]">
+                {active.symbol} · {active.interval === "daily" ? "日線" : "週線"}
+                <ChevronDown className={`transition-transform duration-150 ${mobileDataToolsOpen ? "rotate-180" : ""}`} size={15} />
+              </span>
+            </Button>
+          )}
+          <div id="mobile-data-tools" className={`${active && !mobileDataToolsOpen ? "hidden" : "block"} space-y-4 lg:block`}>
           <section className="panel p-4">
             <div className="mb-4 flex items-center gap-2">
               <FileUp size={17} />
@@ -259,6 +317,7 @@ export function App() {
                 className="mt-3 border-t border-[#E5E5E5] pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  setNetPremiumPerShare("");
                   void confirmImport(pendingImport.symbol);
                 }}
               >
@@ -318,7 +377,10 @@ export function App() {
                   variant="ghost"
                   size="icon"
                   aria-label="清除全部"
-                  onClick={() => void historyCatalog.clear()}
+                  onClick={() => {
+                    setNetPremiumPerShare("");
+                    void historyCatalog.clear();
+                  }}
                 >
                   <Trash2 size={16} />
                 </Button>
@@ -335,7 +397,11 @@ export function App() {
                 >
                   <button
                     className="min-w-0 flex-1 rounded text-left outline-none transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-600"
-                    onClick={() => void historyCatalog.activate(dataset.id)}
+                    onClick={() => {
+                      setMobileDataToolsOpen(false);
+                      setNetPremiumPerShare("");
+                      void historyCatalog.activate(dataset.id);
+                    }}
                   >
                     <strong className="flex items-center gap-2 text-sm">
                       {dataset.symbol}
@@ -351,7 +417,10 @@ export function App() {
                     variant="ghost"
                     size="icon"
                     aria-label="刪除資料集"
-                    onClick={() => void historyCatalog.remove(dataset.id)}
+                    onClick={() => {
+                      if (dataset.id === activeId) setNetPremiumPerShare("");
+                      void historyCatalog.remove(dataset.id);
+                    }}
                   >
                     <Trash2 size={14} />
                   </Button>
@@ -359,9 +428,10 @@ export function App() {
               ))}
             </div>
           </section>
+          </div>
         </aside>
 
-        <div className="min-w-0 space-y-4">
+        <div className="order-2 min-w-0 space-y-4 lg:order-2">
           {!historyCatalog.ready ? (
             <section className="panel flex min-h-80 items-center justify-center p-8 text-sm text-[#6B7280]">
               <RefreshCw size={16} className="mr-2 animate-spin-fast" />讀取本機資料集
@@ -543,7 +613,10 @@ export function App() {
                         key={item.weeks}
                         size="sm"
                         variant={horizon === item.weeks ? "accent" : "outline"}
-                        onClick={() => setHorizon(item.weeks)}
+                        onClick={() => {
+                          setHorizon(item.weeks);
+                          setNetPremiumPerShare("");
+                        }}
                       >
                         {item.weeks}週
                       </Button>
@@ -595,16 +668,20 @@ export function App() {
                     step="0.01"
                     placeholder="例如 71.00"
                     value={candidate}
-                    onChange={(event) => setCandidate(event.target.value)}
+                    onChange={(event) => {
+                      setCandidate(event.target.value);
+                      setNetPremiumPerShare("");
+                    }}
                   />
                   <select
                     className="h-10 rounded-md border border-[#D8D8D8] bg-white px-3 text-sm"
                     value={candidateSide}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setCandidateSide(
                         event.target.value as "lower" | "upper",
-                      )
-                    }
+                      );
+                      setNetPremiumPerShare("");
+                    }}
                   >
                     <option value="lower">下檔 / Put</option>
                     <option value="upper">上檔 / Call</option>
@@ -616,6 +693,11 @@ export function App() {
                       <CandidateResult
                         candidate={candidateResult}
                         anchorPrice={anchorPrice}
+                        netPremiumPerShare={netPremiumPerShare}
+                        onNetPremiumPerShareChange={setNetPremiumPerShare}
+                        dataLastDate={active.bars.at(-1)?.date ?? ""}
+                        historyStale={historyStale}
+                        intraday={analysisIntraday}
                         annualCapitalReturnRatePct={annualCapitalReturnRatePct}
                         onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
                       />
@@ -699,12 +781,19 @@ function RiskTable({
   ];
   return (
     <div>
-      <DownsideDistributionChart
-        analysis={analysis}
-        anchorPrice={anchorPrice}
-        candidate={candidate}
-        stale={stale}
-      />
+      <PutDecisionSummary analysis={analysis} stale={stale} />
+      <details className="group mt-4 border-t border-[#E5E5E5] pt-1">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded py-3 text-sm font-semibold text-[#565656] outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+          <span>查看歷史分布（ECDF）</span>
+          <ChevronDown className="transition-transform duration-150 group-open:rotate-180" size={16} />
+        </summary>
+        <DownsideDistributionChart
+          analysis={analysis}
+          anchorPrice={anchorPrice}
+          candidate={candidate}
+          stale={stale}
+        />
+      </details>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
         <colgroup>
@@ -909,15 +998,36 @@ function RiskTable({
 function CandidateResult({
   candidate,
   anchorPrice,
+  netPremiumPerShare,
+  onNetPremiumPerShareChange,
+  dataLastDate,
+  historyStale,
+  intraday,
   annualCapitalReturnRatePct,
   onAnnualCapitalReturnRatePctChange,
 }: {
   candidate: CandidateAnalysis;
   anchorPrice: number;
+  netPremiumPerShare: string;
+  onNetPremiumPerShareChange: (value: string) => void;
+  dataLastDate: string;
+  historyStale: boolean;
+  intraday: boolean;
   annualCapitalReturnRatePct: string;
   onAnnualCapitalReturnRatePctChange: (value: string) => void;
 }) {
   const { result, sampleSize } = candidate;
+  const optionPosition = candidate.side === "lower"
+    ? Math.abs(result.price - anchorPrice) < 0.005
+      ? "目前價平"
+      : result.price > anchorPrice
+        ? "目前價內 Put"
+        : undefined
+    : Math.abs(result.price - anchorPrice) < 0.005
+      ? "目前價平"
+      : result.price < anchorPrice
+        ? "目前價內 Call"
+        : undefined;
   return (
     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm lg:grid-cols-4">
       <div>
@@ -929,6 +1039,11 @@ function CandidateResult({
         <strong className="num">
           {percent.format(result.price / anchorPrice - 1)}
         </strong>
+        {optionPosition && (
+          <small className="mt-1 block font-semibold text-[#92400E]">
+            {optionPosition}
+          </small>
+        )}
       </div>
       <div>
         <span className="field-label"><TermHelp explanation="到期估計是目標週收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
@@ -959,6 +1074,14 @@ function CandidateResult({
           分級用單側上限 {percent.format(result.pathTouchRiskUpper95)}
         </small>
       </div>
+      <CandidateRecoveryPanel
+        candidate={candidate}
+        netPremiumPerShare={netPremiumPerShare}
+        onNetPremiumPerShareChange={onNetPremiumPerShareChange}
+        dataLastDate={dataLastDate}
+        historyStale={historyStale}
+        intraday={intraday}
+      />
       <PremiumAnalysisPanel
         candidate={candidate}
         annualCapitalReturnRatePct={annualCapitalReturnRatePct}

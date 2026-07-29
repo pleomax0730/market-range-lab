@@ -74,9 +74,9 @@ describe('extractMatchedPaths', () => {
       highReturn: 0.01,
       startVolatility: 0.02,
     }))
-    const tests = Array.from({ length: 5 }, () => ({
-      closeReturn: -0.1,
-      lowReturn: -0.12,
+    const tests = Array.from({ length: 5 }, (_, index) => ({
+      closeReturn: -0.1 - index * 0.01,
+      lowReturn: -0.12 - index * 0.01,
       highReturn: 0.01,
       startVolatility: 0.02,
     }))
@@ -124,12 +124,14 @@ describe('extractMatchedPaths', () => {
     expect(recovery?.recoveredEvents).toBe(1)
     expect(recovery?.unrecoveredEvents).toBe(1)
     expect(recovery?.medianPeriods).toBe(2)
-    expect(recovery?.windows[0]).toEqual({
+    expect(recovery?.windows[0]).toMatchObject({
       periods: 5,
       eligibleAssignments: 1,
       recoveredAssignments: 1,
       recoveryRate: 1,
     })
+    expect(recovery?.windows[0].effectiveEligibleAssignments).toBeCloseTo(0.5)
+    expect(recovery?.windows[0].lower95).toBeGreaterThan(0)
   })
 
   it('keeps full-history stress while widening paths for elevated current volatility', () => {

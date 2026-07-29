@@ -44,7 +44,12 @@ describe('Analysis Report', () => {
         intraday: false,
         interval: 'weekly',
       },
-      candidate: { weeks: 1, price: 80, side: 'lower' },
+      candidate: {
+        weeks: 1,
+        price: 100,
+        side: 'lower',
+        netPremiumPerShare: 5,
+      },
       gradePaused: true,
     })
     const report = composeAnalysisReport(statistical, {
@@ -68,8 +73,11 @@ describe('Analysis Report', () => {
 
     expect(report.candidate?.result.grade).toBe('insufficient')
     expect(report.candidate?.premium).toBeDefined()
+    expect(report.candidate?.recovery).toBeDefined()
+    expect(report.candidate?.recovery?.breakEven?.currentBreakEvenPrice).toBe(95)
     expect(exported.candidate.result.grade).toBe(report.candidate?.result.grade)
     expect(exported.candidate.premium).toEqual(report.candidate?.premium)
+    expect(exported.candidate.recovery).toEqual(report.candidate?.recovery)
     expect(exported.candidate.premium.annualCapitalReturnRate).toBe(0.15)
     expect(exported.marketPremiumPerShare).toBeUndefined()
     expect(exported.premiumOfferStatus).toBeUndefined()
@@ -78,6 +86,8 @@ describe('Analysis Report', () => {
     expect(exported.dataset.bars).toBeUndefined()
     expect(exportedCsv).toContain('"candidateGrade"')
     expect(exportedCsv).toContain('"candidatePremiumStatisticalFloor"')
+    expect(exportedCsv).toContain('"candidateRecoveryAssignmentEvents"')
+    expect(exportedCsv).toContain('"candidateBreakEvenRecoveryMedianPeriods"')
     expect(exportedCsv).not.toContain('"candidateMarketPremiumPerShare"')
     expect(exportedCsv).toContain('"insufficient"')
     expect(report.dataset.interval).toBe('weekly')

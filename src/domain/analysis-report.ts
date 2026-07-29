@@ -7,7 +7,12 @@ import {
   type PutPremiumAnalysis,
 } from './premium-analysis'
 import { evaluateCandidate } from './statistics'
+import {
+  calculateCandidatePutRecovery,
+  type CandidatePutRecoveryAnalysis,
+} from './candidate-recovery'
 import type {
+  AssignmentRecoverySummary,
   DatasetMetadata,
   HistoryDataset,
   HorizonAnalysis,
@@ -19,6 +24,7 @@ export type CandidateRequest = {
   weeks: number
   price: number
   side: 'lower' | 'upper'
+  netPremiumPerShare?: number
 }
 
 export type StatisticalReportInput = {
@@ -30,6 +36,7 @@ export type StatisticalReportInput = {
 export type CandidateAnalysis = CandidateRequest & {
   sampleSize: number
   result: RiskSide
+  recovery?: CandidatePutRecoveryAnalysis
   premium?: PutPremiumAnalysis
   premiumUnavailableReason?: string
 }
@@ -157,10 +164,22 @@ export function calculateStatisticalReport(
           effectiveSampleSize: candidateAnalysis.effectiveSampleSize,
         })
       : undefined
+    const recovery = input.candidate.side === 'lower'
+      ? calculateCandidatePutRecovery({
+          bars: input.analysis.bars,
+          paths,
+          anchorPrice: input.analysis.anchorPrice,
+          strike: input.candidate.price,
+          effectiveSampleSize: candidateAnalysis.effectiveSampleSize,
+          interval: input.analysis.interval ?? 'daily',
+          netPremiumPerShare: input.candidate.netPremiumPerShare,
+        })
+      : undefined
     candidate = {
       ...input.candidate,
       sampleSize: paths.length,
       result: pauseCandidate(result, input.candidate.weeks, input.gradePaused),
+      recovery,
       premium,
       ...(input.candidate.side === 'upper'
         ? { premiumUnavailableReason: 'Naked Call 損失沒有上限；歷史最大漲幅無法形成可靠的最低 Premium。' }
@@ -226,6 +245,27 @@ export function composeAnalysisReport(
     selectedWeeks: context.selectedWeeks,
     candidate,
     analyses: statistical.analyses,
+  }
+}
+
+function recoveryCsvFields(
+  prefix: string,
+  recovery: AssignmentRecoverySummary | undefined,
+) {
+  return {
+    [`${prefix}Estimator`]: recovery?.estimator ?? '',
+    [`${prefix}PeriodUnit`]: recovery?.periodUnit ?? '',
+    [`${prefix}AssignmentEvents`]: recovery?.assignmentEvents ?? '',
+    [`${prefix}EffectiveAssignmentEvents`]: recovery?.effectiveAssignmentEvents ?? '',
+    [`${prefix}RecoveredEvents`]: recovery?.recoveredEvents ?? '',
+    [`${prefix}UnrecoveredEvents`]: recovery?.unrecoveredEvents ?? '',
+    [`${prefix}MedianPeriods`]: recovery?.medianPeriods ?? '',
+    [`${prefix}P75Periods`]: recovery?.p75Periods ?? '',
+    [`${prefix}MaximumRecoveredPeriods`]: recovery?.maximumPeriods ?? '',
+    [`${prefix}MedianCalendarDays`]: recovery?.medianCalendarDays ?? '',
+    [`${prefix}P75CalendarDays`]: recovery?.p75CalendarDays ?? '',
+    [`${prefix}MaximumRecoveredCalendarDays`]: recovery?.maximumCalendarDays ?? '',
+    [`${prefix}Windows`]: JSON.stringify(recovery?.windows ?? []),
   }
 }
 
@@ -381,6 +421,27 @@ function reportRows(report: AnalysisReport) {
         candidateTouchLower95: report.candidate?.result.pathTouchLower95 ?? '',
         candidateTouchUpper95: report.candidate?.result.pathTouchUpper95 ?? '',
         candidateTouchRiskUpper95: report.candidate?.result.pathTouchRiskUpper95 ?? '',
+        candidateRecoveryMethod: report.candidate?.recovery?.method ?? '',
+        candidateRecoverySampleSize: report.candidate?.recovery?.sampleSize ?? '',
+        candidateRecoveryEffectiveSampleSize: report.candidate?.recovery?.effectiveSampleSize ?? '',
+        candidateRecoveryMoneyness: report.candidate?.recovery?.moneyness ?? '',
+        candidateRecoveryAssignmentEvents: report.candidate?.recovery?.assignmentEvents ?? '',
+        candidateRecoveryEffectiveAssignmentEvents: report.candidate?.recovery?.effectiveAssignmentEvents ?? '',
+        candidateRecoveryHistoricalAssignmentRate: report.candidate?.recovery?.historicalAssignmentRate ?? '',
+        candidateRecoveryHistoricalAssignmentLower95: report.candidate?.recovery?.historicalAssignmentLower95 ?? '',
+        candidateRecoveryHistoricalAssignmentUpper95: report.candidate?.recovery?.historicalAssignmentUpper95 ?? '',
+        candidateRecoveryEvidence: report.candidate?.recovery?.evidence ?? '',
+        ...recoveryCsvFields(
+          'candidateStrikeRecovery',
+          report.candidate?.recovery?.strikeRecovery,
+        ),
+        candidateBreakEvenNetPremiumPerShare: report.candidate?.recovery?.breakEven?.netPremiumPerShare ?? '',
+        candidateBreakEvenPremiumRate: report.candidate?.recovery?.breakEven?.premiumRate ?? '',
+        candidateBreakEvenPrice: report.candidate?.recovery?.breakEven?.currentBreakEvenPrice ?? '',
+        ...recoveryCsvFields(
+          'candidateBreakEvenRecovery',
+          report.candidate?.recovery?.breakEven?.recovery,
+        ),
         candidatePremiumUnavailableReason: report.candidate?.premiumUnavailableReason ?? '',
         candidatePremiumLossEvents: report.candidate?.premium?.lossEventCount ?? '',
         candidatePremiumEffectiveLossEvents: report.candidate?.premium?.effectiveLossEventCount ?? '',

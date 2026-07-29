@@ -11,7 +11,8 @@
 - 本機 Express／Vite 代理 Yahoo 常規盤報價；可手動覆寫 Reference Price
 - 全歷史等權路徑 + 週內位置配對（Daily）或連續週線路徑（Weekly）
 - 波動調整的較不利包絡、區塊 bootstrap 95% 區間、單側 95% 風險上限分級
-- 樣本外 Put 履約率、週內跌破率，以及履約後回到模型履約價的歷史時間
+- 樣本外 Put 履約率、週內跌破率，以及 Kaplan–Meier 履約後價格回復時間
+- 自訂 Put 以相同價內外比例重播原始歷史；可選填淨 Premium 比較回到履約價與損益兩平價
 - 下檔 Put 候選價的歷史 Premium 補償參考（非理論定價、非即時選擇權報價）
 - 結果可匯出 JSON／CSV；歷史資料留在瀏覽器 IndexedDB
 
@@ -25,7 +26,7 @@
 | 儲存 | IndexedDB（`idb`） |
 | 測試 | Vitest、Testing Library |
 
-模型版本：`1.4.0`（見 `src/domain/model.ts`）
+模型版本：`1.5.0`（見 `src/domain/model.ts`）
 
 ## 環境需求
 

@@ -1,4 +1,4 @@
-export const MODEL_VERSION = '1.4.0'
+export const MODEL_VERSION = '1.5.0'
 
 export const CONFIDENCE_LEVEL = 0.95
 export const ONE_SIDED_Z95 = 1.6448536269514722
