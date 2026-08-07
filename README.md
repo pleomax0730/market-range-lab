@@ -6,7 +6,7 @@
 
 ## 功能摘要
 
-- 匯入 **Daily**（優先）或 **Weekly-only** CSV 作為 Canonical Price History
+- 匯入 **Daily**（優先）或 **Weekly-only** CSV 作為 Canonical Price History；Daily 可一次多選同一 Symbol 的分段檔案並依日期合併
 - 從檔名推斷 Symbol；必要時可確認 Yahoo ticker（例如 `PALANTIR` → `PLTR`）
 - 本機 Express／Vite 代理 Yahoo 常規盤報價；可手動覆寫 Reference Price
 - 全歷史等權路徑 + 週內位置配對（Daily）或連續週線路徑（Weekly）

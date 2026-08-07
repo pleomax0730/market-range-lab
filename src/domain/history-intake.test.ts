@@ -4,6 +4,7 @@ import {
   defaultHistoryImportOptions,
   formatHistoryImportMessages,
   prepareHistoryImport,
+  prepareHistoryImports,
   resolveImportSymbol,
 } from './history-intake'
 import type { HistoryDataset, ImportResult } from './types'
@@ -49,6 +50,46 @@ describe('prepareHistoryImport', () => {
     expect(prepared.status).toBe('error')
     if (prepared.status !== 'error') return
     expect(prepared.messages[0]).toContain('無法從檔名辨識')
+  })
+})
+
+describe('prepareHistoryImports', () => {
+  it('prepares multiple same-symbol files as one import', async () => {
+    const prepared = await prepareHistoryImports([
+      fileStub('SOXL Stock Price History.csv', 'older'),
+      fileStub('SOXL Stock Price History2.csv', 'newer'),
+    ], 'daily')
+
+    expect(prepared.status).toBe('ready')
+    if (prepared.status !== 'ready') return
+    expect(prepared.symbol).toBe('SOXL')
+    expect(prepared.sources).toEqual([
+      { filename: 'SOXL Stock Price History.csv', csv: 'older' },
+      { filename: 'SOXL Stock Price History2.csv', csv: 'newer' },
+    ])
+  })
+
+  it('asks for one ticker confirmation for multiple company-name files', async () => {
+    const prepared = await prepareHistoryImports([
+      fileStub('Marvell Stock Price History.csv', 'older'),
+      fileStub('Marvell Stock Price History2.csv', 'newer'),
+    ], 'daily')
+
+    expect(prepared.status).toBe('needs-confirmation')
+    if (prepared.status !== 'needs-confirmation') return
+    expect(prepared.pending.detectedSymbol).toBe('MARVELL')
+    expect(prepared.pending.sources).toHaveLength(2)
+  })
+
+  it('rejects a mixed-symbol selection', async () => {
+    const prepared = await prepareHistoryImports([
+      fileStub('SOXL Stock Price History.csv', 'soxl'),
+      fileStub('TQQQ Stock Price History.csv', 'tqqq'),
+    ], 'daily')
+
+    expect(prepared.status).toBe('error')
+    if (prepared.status !== 'error') return
+    expect(prepared.messages[0]).toContain('不同 Symbol')
   })
 })
 

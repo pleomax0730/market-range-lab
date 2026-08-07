@@ -10,13 +10,14 @@ import {
 import {
   defaultHistoryImportOptions,
   formatHistoryImportMessages,
-  prepareHistoryImport,
+  prepareHistoryImports,
   resolveImportSymbol,
   type HistoryInterval,
-  type PendingHistoryImport,
+  type PendingHistoryFilesImport,
 } from '../domain/history-intake'
 import {
-  importHistoryCsv,
+  importHistoryCsvFiles,
+  type HistoryCsvSource,
   type HistoryImportOptions,
 } from '../domain/import-history'
 import type { HistoryDataset, ImportResult } from '../domain/types'
@@ -61,7 +62,7 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     ready: false,
     error: '',
   })
-  const [pendingImport, setPendingImport] = useState<PendingHistoryImport>()
+  const [pendingImport, setPendingImport] = useState<PendingHistoryFilesImport>()
   const [messages, setMessages] = useState<string[]>([])
   const snapshotRef = useRef(snapshot)
   const operationQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -102,11 +103,11 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     return () => { cancelled = true }
   }, [commit, repository])
 
-  const importAndActivate = useCallback((
-    csv: string,
+  const importFilesAndActivate = useCallback((
+    sources: HistoryCsvSource[],
     options: HistoryImportOptions,
   ): Promise<ImportResult> => enqueue(async () => {
-    const result = await importHistoryCsv(csv, options)
+    const result = await importHistoryCsvFiles(sources, options)
     if (!result.dataset) return result
     const preferredDaily = options.interval === 'weekly'
       ? snapshotRef.current.datasets.find(
@@ -132,8 +133,16 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     return result
   }), [commit, enqueue, repository])
 
-  const commitImport = useCallback(async (
+  const importAndActivate = useCallback((
     csv: string,
+    options: HistoryImportOptions,
+  ) => importFilesAndActivate(
+    [{ filename: options.filename, csv }],
+    options,
+  ), [importFilesAndActivate])
+
+  const commitImport = useCallback(async (
+    sources: HistoryCsvSource[],
     filename: string,
     interval: HistoryInterval,
     symbolInput: string,
@@ -145,28 +154,32 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
       return
     }
     setPendingImport(undefined)
-    const result = await importAndActivate(
-      csv,
+    const result = await importFilesAndActivate(
+      sources,
       defaultHistoryImportOptions({
         symbol: resolved.symbol,
         filename,
         interval,
       }),
     )
-    setMessages(
-      formatHistoryImportMessages(
-        result,
-        interval,
-        snapshotRef.current.datasets,
-      ),
+    const nextMessages = formatHistoryImportMessages(
+      result,
+      interval,
+      snapshotRef.current.datasets,
     )
-  }, [importAndActivate])
+    if (sources.length > 1 && result.dataset) {
+      nextMessages.unshift(
+        `已合併 ${sources.length} 個 ${interval === 'daily' ? 'Daily' : 'Weekly'} CSV，共 ${result.dataset.bars.length.toLocaleString()} 筆不重複價格資料。`,
+      )
+    }
+    setMessages(nextMessages)
+  }, [importFilesAndActivate])
 
-  const importFile = useCallback(async (
-    file: File,
+  const importFiles = useCallback(async (
+    files: File[],
     interval: HistoryInterval,
   ) => {
-    const prepared = await prepareHistoryImport(file, interval)
+    const prepared = await prepareHistoryImports(files, interval)
     if (prepared.status === 'error') {
       setPendingImport(undefined)
       setMessages(prepared.messages)
@@ -178,17 +191,24 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
       return
     }
     await commitImport(
-      prepared.csv,
+      prepared.sources,
       prepared.filename,
       prepared.interval,
       prepared.symbol,
     )
   }, [commitImport])
 
+  const importFile = useCallback(async (
+    file: File,
+    interval: HistoryInterval,
+  ) => {
+    await importFiles([file], interval)
+  }, [importFiles])
+
   const confirmImport = useCallback(async (symbolInput: string) => {
     if (!pendingImport) return
     await commitImport(
-      pendingImport.csv,
+      pendingImport.sources,
       pendingImport.filename,
       pendingImport.interval,
       symbolInput,
@@ -251,6 +271,7 @@ export function useHistoryCatalog({ repository = indexedDbRepository }: UseHisto
     messages,
     importAndActivate,
     importFile,
+    importFiles,
     confirmImport,
     cancelImport,
     updatePendingSymbol,

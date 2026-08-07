@@ -107,6 +107,33 @@ describe('useHistoryCatalog', () => {
     )
   })
 
+  it('merges a multi-file Daily selection after one symbol confirmation', async () => {
+    const storage = repository([])
+    const { result } = renderHook(() => useHistoryCatalog({ repository: storage }))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    const files = [
+      new File([
+        'Date,Price,Open,High,Low\n07/15/2026,100,99,101,98\n07/16/2026,101,100,102,99',
+      ], 'Marvell Stock Price History.csv', { type: 'text/csv' }),
+      new File([
+        'Date,Price,Open,High,Low\n07/17/2026,102,101,103,100\n07/20/2026,104,102,105,101',
+      ], 'Marvell Stock Price History2.csv', { type: 'text/csv' }),
+    ]
+
+    await act(async () => result.current.importFiles(files, 'daily'))
+    expect(result.current.pendingImport?.detectedSymbol).toBe('MARVELL')
+
+    await act(async () => result.current.confirmImport('MRVL'))
+
+    expect(result.current.active?.symbol).toBe('MRVL')
+    expect(result.current.active?.bars).toHaveLength(4)
+    expect(storage.saveAndSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ symbol: 'MRVL', interval: 'daily' }),
+      expect.any(String),
+    )
+    expect(result.current.messages[0]).toContain('已合併 2 個 Daily CSV')
+  })
+
   it('selects a deterministic fallback after deleting the active dataset', async () => {
     const soxl = dataset('SOXL')
     const tqqq = dataset('TQQQ')

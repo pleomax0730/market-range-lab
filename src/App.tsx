@@ -72,6 +72,7 @@ export function App() {
     pendingImport,
     messages,
     importFile,
+    importFiles,
     confirmImport,
     cancelImport,
     updatePendingSymbol,
@@ -283,16 +284,20 @@ export function App() {
             <div className="space-y-3">
               <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#BDBDBD] bg-[#FAFAFA] text-sm transition-[border-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-within:ring-2 focus-within:ring-blue-600 hover:border-blue-600">
                 <FileUp className="mb-2" size={20} />
-                <span>選擇 Daily CSV</span>
+                <span>選擇 Daily CSV（可多選）</span>
+                <small className="mt-1 text-[11px] text-[#6B7280]">
+                  同一 Symbol 的不同日期區間
+                </small>
                 <input
                   className="sr-only"
                   type="file"
                   accept=".csv,text/csv"
+                  multiple
                   disabled={!historyCatalog.ready}
                   onChange={(event) => {
-                    const file = event.target.files?.[0];
+                    const files = Array.from(event.target.files ?? []);
                     event.currentTarget.value = "";
-                    if (file) void importFile(file, "daily");
+                    if (files.length) void importFiles(files, "daily");
                   }}
                 />
               </label>

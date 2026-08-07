@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { importHistoryCsv } from './import-history'
+import { importHistoryCsv, importHistoryCsvFiles } from './import-history'
 
 const base = {
   symbol: 'SOXL',
@@ -59,6 +59,17 @@ describe('importHistoryCsv', () => {
     expect(result.warnings.some((warning) => warning.code === 'CORPORATE_ACTION_MARKERS')).toBe(true)
   })
 
+  it('excludes a flat volume-bearing weekend marker that repeats a nearby regular close', async () => {
+    const csv = `Date,Price,Open,High,Low,Vol.,Change %
+02/26/2016,9.54,9.60,9.64,9.45,6.59M,-0.10%
+02/27/2016,9.54,9.54,9.54,9.54,6.14M,0.00%
+02/29/2016,9.55,9.58,9.73,9.51,3.30M,0.10%`
+    const result = await importHistoryCsv(csv, base)
+    expect(result.errors).toEqual([])
+    expect(result.dataset?.bars.map((bar) => bar.date)).toEqual(['2016-02-26', '2016-02-29'])
+    expect(result.warnings.some((warning) => warning.code === 'CORPORATE_ACTION_MARKERS')).toBe(true)
+  })
+
   it('excludes a holiday row that duplicates a regular session open, close, and volume', async () => {
     const csv = `Date,Price,Open,High,Low,Vol.,Change %
 12/24/2025,55.36,54.87,55.45,54.78,25.86M,0.64%
@@ -98,5 +109,95 @@ describe('importHistoryCsv', () => {
     const csv = `Date,Price,Open,High,Low,Vol.\n07/04/2026,100,99,101,98,1M`
     const result = await importHistoryCsv(csv, base)
     expect(result.errors.some((error) => error.code === 'NON_SESSION_ROW')).toBe(true)
+  })
+})
+
+describe('importHistoryCsvFiles', () => {
+  it('merges adjacent non-overlapping daily files into one chronological dataset', async () => {
+    const result = await importHistoryCsvFiles([
+      {
+        filename: 'MRVL older.csv',
+        csv: `Date,Price,Open,High,Low\n07/15/2026,100,99,101,98\n07/16/2026,101,100,102,99`,
+      },
+      {
+        filename: 'MRVL newer.csv',
+        csv: `Date,Price,Open,High,Low\n07/17/2026,102,101,103,100\n07/20/2026,104,102,105,101`,
+      },
+    ], { ...base, symbol: 'MRVL' })
+
+    expect(result.errors).toEqual([])
+    expect(result.dataset?.bars.map((bar) => bar.date)).toEqual([
+      '2026-07-15',
+      '2026-07-16',
+      '2026-07-17',
+      '2026-07-20',
+    ])
+    expect(result.dataset?.filename).toBe('MRVL older.csv + MRVL newer.csv')
+    expect(result.warnings.some((warning) => warning.code === 'FILE_RANGE_GAP')).toBe(false)
+  })
+
+  it('deduplicates identical overlapping dates', async () => {
+    const result = await importHistoryCsvFiles([
+      {
+        filename: 'MRVL older.csv',
+        csv: `Date,Price,Open,High,Low,Vol.\n07/16/2026,101,100,102,99,1M`,
+      },
+      {
+        filename: 'MRVL newer.csv',
+        csv: `Date,Price,Open,High,Low,Vol.\n07/16/2026,101.00,100.00,102.00,99.00,1000K\n07/17/2026,102,101,103,100,2M`,
+      },
+    ], { ...base, symbol: 'MRVL' })
+
+    expect(result.errors).toEqual([])
+    expect(result.dataset?.bars).toHaveLength(2)
+    expect(result.warnings.some((warning) => warning.code === 'DUPLICATE_DATE_DEDUPED')).toBe(true)
+  })
+
+  it('blocks conflicting prices for the same date', async () => {
+    const result = await importHistoryCsvFiles([
+      {
+        filename: 'MRVL older.csv',
+        csv: `Date,Price,Open,High,Low\n07/16/2026,101,100,102,99`,
+      },
+      {
+        filename: 'MRVL newer.csv',
+        csv: `Date,Price,Open,High,Low\n07/16/2026,105,100,106,99`,
+      },
+    ], { ...base, symbol: 'MRVL' })
+
+    expect(result.dataset).toBeUndefined()
+    expect(result.errors.some((error) => error.code === 'CONFLICTING_DATE')).toBe(true)
+  })
+
+  it('warns when selected file ranges leave a regular-session gap', async () => {
+    const result = await importHistoryCsvFiles([
+      {
+        filename: 'MRVL older.csv',
+        csv: `Date,Price,Open,High,Low\n07/15/2026,100,99,101,98`,
+      },
+      {
+        filename: 'MRVL newer.csv',
+        csv: `Date,Price,Open,High,Low\n07/17/2026,102,101,103,100`,
+      },
+    ], { ...base, symbol: 'MRVL' })
+
+    expect(result.errors).toEqual([])
+    expect(result.warnings.some((warning) => warning.code === 'FILE_RANGE_GAP')).toBe(true)
+  })
+
+  it('detects a discontinuity across a file boundary', async () => {
+    const result = await importHistoryCsvFiles([
+      {
+        filename: 'MRVL older.csv',
+        csv: `Date,Price,Open,High,Low\n07/16/2026,100,100,102,98`,
+      },
+      {
+        filename: 'MRVL newer.csv',
+        csv: `Date,Price,Open,High,Low\n07/17/2026,20,20,21,19`,
+      },
+    ], { ...base, symbol: 'MRVL' })
+
+    expect(result.dataset).toBeUndefined()
+    expect(result.errors.some((error) => error.code === 'SUSPECTED_SPLIT_CONFIRMATION_REQUIRED')).toBe(true)
   })
 })
