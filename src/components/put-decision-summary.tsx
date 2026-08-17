@@ -34,12 +34,13 @@ export function PutDecisionSummary({
   analysis,
   stale,
 }: {
-  analysis: Pick<HorizonAnalysis, 'weeks' | 'targetDate' | 'lower'>
+  analysis: Pick<HorizonAnalysis, 'tradingSessions' | 'targetDate' | 'lower'>
   stale: boolean
 }) {
   const entries = [
     { label: '保守', row: analysis.lower[0] },
     { label: '安全', row: analysis.lower[1] },
+    { label: '激進', row: analysis.lower[2] },
   ].filter((entry): entry is { label: string; row: RiskSide } => Boolean(entry.row))
 
   if (!entries.length) return null
@@ -48,9 +49,9 @@ export function PutDecisionSummary({
     <section aria-labelledby="put-decision-heading">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="put-decision-heading" className="text-sm font-bold">Put 決策價格</h3>
-        <span className="num text-xs text-[#6B7280]">{analysis.weeks} 週 · 目標 {analysis.targetDate}</span>
+        <span className="num text-xs text-[#6B7280]">{analysis.tradingSessions} 交易日 · 到期 {analysis.targetDate}</span>
       </div>
-      <div className="grid divide-y divide-[#E5E5E5] border-y border-[#E5E5E5] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+      <div className="grid divide-y divide-[#E5E5E5] border-y border-[#E5E5E5] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         {entries.map(({ label, row }) => {
           const unavailable = row.meetsTarget === false && row.basis !== 'model-estimate'
           return (
@@ -71,7 +72,7 @@ export function PutDecisionSummary({
                   <dd className="num mt-0.5 font-semibold">{percent.format(row.expirationBreach)}</dd>
                 </div>
                 <div>
-                  <dt className="text-[#6B7280]">週內觸及</dt>
+                  <dt className="text-[#6B7280]">期間觸及</dt>
                   <dd className="num mt-0.5 font-semibold">{percent.format(row.pathTouch)}</dd>
                 </div>
               </dl>

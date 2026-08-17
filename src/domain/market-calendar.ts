@@ -89,3 +89,27 @@ export function previousOrSameRegularSession(anchorDate: string) {
   while (!isRegularSession(format(candidate, 'yyyy-MM-dd'))) candidate = addDays(candidate, -1)
   return format(candidate, 'yyyy-MM-dd')
 }
+
+export function advanceRegularSessions(anchorDate: string, sessions: number) {
+  if (!Number.isInteger(sessions) || sessions < 0) {
+    throw new Error('Trading-session offset must be a non-negative integer.')
+  }
+  let candidate = parseISO(anchorDate)
+  let remaining = sessions
+  while (remaining > 0) {
+    candidate = addDays(candidate, 1)
+    if (isRegularSession(format(candidate, 'yyyy-MM-dd'))) remaining -= 1
+  }
+  return format(candidate, 'yyyy-MM-dd')
+}
+
+export function regularSessionsAfter(anchorDate: string, targetDate: string) {
+  if (targetDate < anchorDate || !isRegularSession(targetDate)) return undefined
+  let candidate = parseISO(anchorDate)
+  let sessions = 0
+  while (format(candidate, 'yyyy-MM-dd') < targetDate) {
+    candidate = addDays(candidate, 1)
+    if (isRegularSession(format(candidate, 'yyyy-MM-dd'))) sessions += 1
+  }
+  return format(candidate, 'yyyy-MM-dd') === targetDate ? sessions : undefined
+}

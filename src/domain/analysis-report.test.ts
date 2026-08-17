@@ -6,6 +6,7 @@ import {
   serializeAnalysisReport,
 } from './analysis-report'
 import { DEFAULT_PREMIUM_ASSUMPTIONS } from './premium-analysis'
+import { DEFAULT_AGGRESSIVE_THRESHOLDS } from './model'
 
 function weeklyDataset(): HistoryDataset {
   const start = Date.parse('2023-01-01T00:00:00Z')
@@ -45,7 +46,7 @@ describe('Analysis Report', () => {
         interval: 'weekly',
       },
       candidate: {
-        weeks: 1,
+        targetDate: '2026-07-24',
         price: 100,
         side: 'lower',
         netPremiumPerShare: 5,
@@ -62,7 +63,9 @@ describe('Analysis Report', () => {
         paused: false,
       },
       pauseReasons: ['stale-history'],
-      selectedWeeks: 1,
+      selectedExpiryDate: '2026-07-24',
+      selectedTradingSessions: 4,
+      aggressiveThresholds: DEFAULT_AGGRESSIVE_THRESHOLDS,
       premiumAssumptions: {
         ...DEFAULT_PREMIUM_ASSUMPTIONS,
         annualCapitalReturnRate: 0.15,
@@ -103,7 +106,7 @@ describe('Analysis Report', () => {
         intraday: false,
         interval: 'weekly',
       },
-      candidate: { weeks: 1, price: 120, side: 'upper' },
+      candidate: { targetDate: '2026-07-24', price: 120, side: 'upper' },
       gradePaused: false,
     })
 

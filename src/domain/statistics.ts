@@ -1,5 +1,5 @@
-import type { DownsideDistributionPoint, RiskGrade, RiskSide } from './types'
-import { GRADE_THRESHOLDS, ONE_SIDED_Z95 } from './model'
+import type { DecisionGrade, DownsideDistributionPoint, RiskGrade, RiskSide, RiskThresholds } from './types'
+import { DEFAULT_AGGRESSIVE_THRESHOLDS, GRADE_THRESHOLDS, ONE_SIDED_Z95 } from './model'
 
 export type HistoricalPath = {
   closeReturn: number
@@ -122,15 +122,37 @@ function bootstrapEventStatistics(events: boolean[]) {
   }
 }
 
-export function classifyRisk(expirationUpper: number, touchUpper: number, effectiveSampleSize: number, weeks: number): RiskGrade {
+function thresholdsForGrade(
+  grade: DecisionGrade,
+  aggressiveThresholds: RiskThresholds,
+): RiskThresholds {
+  return grade === 'aggressive' ? aggressiveThresholds : GRADE_THRESHOLDS[grade]
+}
+
+export function classifyRisk(
+  expirationUpper: number,
+  touchUpper: number,
+  effectiveSampleSize: number,
+  weeks: number,
+  aggressiveThresholds = DEFAULT_AGGRESSIVE_THRESHOLDS,
+): RiskGrade {
   if (weeks > 4) return 'scenario'
   if (effectiveSampleSize < 100) return 'insufficient'
   if (expirationUpper <= GRADE_THRESHOLDS.conservative.expirationUpper95 && touchUpper <= GRADE_THRESHOLDS.conservative.pathTouchUpper95) return 'conservative'
   if (expirationUpper <= GRADE_THRESHOLDS.safe.expirationUpper95 && touchUpper <= GRADE_THRESHOLDS.safe.pathTouchUpper95) return 'safe'
+  if (expirationUpper <= aggressiveThresholds.expirationUpper95 && touchUpper <= aggressiveThresholds.pathTouchUpper95) return 'aggressive'
   return 'dangerous'
 }
 
-export function evaluateCandidate(anchorPrice: number, price: number, side: 'lower' | 'upper', paths: HistoricalPath[], effectiveSampleSize: number, weeks: number): RiskSide {
+export function evaluateCandidate(
+  anchorPrice: number,
+  price: number,
+  side: 'lower' | 'upper',
+  paths: HistoricalPath[],
+  effectiveSampleSize: number,
+  weeks: number,
+  aggressiveThresholds = DEFAULT_AGGRESSIVE_THRESHOLDS,
+): RiskSide {
   const returnPct = price / anchorPrice - 1
   if (!paths.length) return { price, returnPct, expirationBreach: 1, expirationLower95: 0, expirationUpper95: 1, expirationRiskUpper95: 1, pathTouch: 1, pathTouchLower95: 0, pathTouchUpper95: 1, pathTouchRiskUpper95: 1, grade: weeks > 4 ? 'scenario' : 'insufficient' }
   const epsilon = Number.EPSILON * 16
@@ -146,13 +168,22 @@ export function evaluateCandidate(anchorPrice: number, price: number, side: 'low
   const pathTouchLower95 = Math.min(touchBootstrap.interval[0], wilsonLower(pathTouch, effectiveSampleSize))
   const pathTouchUpper95 = Math.max(touchBootstrap.interval[1], wilsonUpper(pathTouch, effectiveSampleSize))
   const pathTouchRiskUpper95 = Math.max(touchBootstrap.upper95, wilsonUpper(pathTouch, effectiveSampleSize, ONE_SIDED_Z95))
-  return { price, returnPct, expirationBreach, expirationLower95, expirationUpper95, expirationRiskUpper95, pathTouch, pathTouchLower95, pathTouchUpper95, pathTouchRiskUpper95, grade: classifyRisk(expirationRiskUpper95, pathTouchRiskUpper95, effectiveSampleSize, weeks) }
+  return { price, returnPct, expirationBreach, expirationLower95, expirationUpper95, expirationRiskUpper95, pathTouch, pathTouchLower95, pathTouchUpper95, pathTouchRiskUpper95, grade: classifyRisk(expirationRiskUpper95, pathTouchRiskUpper95, effectiveSampleSize, weeks, aggressiveThresholds) }
 }
 
-export function candidateForThreshold(anchorPrice: number, side: 'lower' | 'upper', paths: HistoricalPath[], effectiveSampleSize: number, weeks: number, grade: 'conservative' | 'safe') {
-  const expirationLimit = GRADE_THRESHOLDS[grade].expirationUpper95
-  const touchLimit = GRADE_THRESHOLDS[grade].pathTouchUpper95
-  if (!paths.length) return evaluateCandidate(anchorPrice, anchorPrice, side, paths, effectiveSampleSize, weeks)
+export function candidateForThreshold(
+  anchorPrice: number,
+  side: 'lower' | 'upper',
+  paths: HistoricalPath[],
+  effectiveSampleSize: number,
+  weeks: number,
+  grade: DecisionGrade,
+  aggressiveThresholds = DEFAULT_AGGRESSIVE_THRESHOLDS,
+) {
+  const thresholds = thresholdsForGrade(grade, aggressiveThresholds)
+  const expirationLimit = thresholds.expirationUpper95
+  const touchLimit = thresholds.pathTouchUpper95
+  if (!paths.length) return evaluateCandidate(anchorPrice, anchorPrice, side, paths, effectiveSampleSize, weeks, aggressiveThresholds)
   const maxObservedReturn = Math.max(...paths.map((path) => Math.max(path.closeReturn, path.highReturn)))
   const anchorCents = Math.max(1, Math.round(anchorPrice * 100))
   let low = side === 'lower' ? 1 : anchorCents
@@ -176,7 +207,7 @@ export function candidateForThreshold(anchorPrice: number, side: 'lower' | 'uppe
     )
     return touchUpper <= touchLimit
   }
-  if (!passesAtCents(answer)) return { ...evaluateCandidate(anchorPrice, answer / 100, side, paths, effectiveSampleSize, weeks), requestedGrade: grade, meetsTarget: false }
+  if (!passesAtCents(answer)) return { ...evaluateCandidate(anchorPrice, answer / 100, side, paths, effectiveSampleSize, weeks, aggressiveThresholds), requestedGrade: grade, meetsTarget: false }
   while (low <= high) {
     const middle = Math.floor((low + high) / 2)
     const pass = passesAtCents(middle)
@@ -184,5 +215,5 @@ export function candidateForThreshold(anchorPrice: number, side: 'lower' | 'uppe
       if (pass) { answer = middle; low = middle + 1 } else high = middle - 1
     } else if (pass) { answer = middle; high = middle - 1 } else low = middle + 1
   }
-  return { ...evaluateCandidate(anchorPrice, answer / 100, side, paths, effectiveSampleSize, weeks), requestedGrade: grade, meetsTarget: true, basis: 'certified' as const }
+  return { ...evaluateCandidate(anchorPrice, answer / 100, side, paths, effectiveSampleSize, weeks, aggressiveThresholds), requestedGrade: grade, meetsTarget: true, basis: 'certified' as const }
 }

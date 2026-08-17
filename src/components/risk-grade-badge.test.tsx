@@ -9,12 +9,14 @@ describe("RiskGradeBadge", () => {
       <TooltipProvider>
         <RiskGradeBadge grade="conservative" />
         <RiskGradeBadge grade="safe" />
+        <RiskGradeBadge grade="aggressive" />
         <RiskGradeBadge grade="dangerous" />
       </TooltipProvider>,
     );
 
     expect(screen.getByText("符合保守門檻")).toBeInTheDocument();
     expect(screen.getByText("符合安全門檻")).toBeInTheDocument();
+    expect(screen.getByText("符合激進門檻")).toBeInTheDocument();
     expect(screen.getByText("超出安全門檻")).toHaveAttribute("tabindex", "0");
     expect(screen.queryByText("危險")).not.toBeInTheDocument();
   });

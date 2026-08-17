@@ -100,14 +100,14 @@ export function DownsideDistributionChart({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold">下檔尾端累積分布</h3>
-            <TermHelp explanation="ECDF（經驗累積分布）：橫軸是候選履約價，縱軸是同類歷史路徑中，週收盤跌破或盤中曾觸及該價格的比例。越靠左通常事件越少。">
+            <TermHelp explanation="ECDF（經驗累積分布）：橫軸是候選履約價，縱軸是相同交易日跨度的歷史路徑中，到期收盤跌破或期間曾觸及該價格的比例。越靠左通常事件越少。">
               ECDF
             </TermHelp>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#565656]">
             <span className="inline-flex items-center gap-1.5">
               <i className="size-2.5 rounded-sm border border-[var(--chart-expiration)] bg-[var(--chart-expiration)]" />
-              週收盤跌破
+              到期收盤跌破
             </span>
             <span className="inline-flex items-center gap-1.5">
               <i className="size-2.5 rounded-sm border border-[var(--chart-touch)] bg-[var(--chart-touch)]" />
@@ -181,7 +181,7 @@ export function DownsideDistributionChart({
               labelFormatter={(value) => `履約價 ${money.format(Number(value))}`}
               formatter={(value, name) => [
                 percent.format(Number(value)),
-                name === "pathTouch" ? "盤中曾觸及" : "週收盤跌破",
+                name === "pathTouch" ? "期間曾觸及" : "到期收盤跌破",
               ]}
               contentStyle={{
                 background: "var(--chart-tooltip)",

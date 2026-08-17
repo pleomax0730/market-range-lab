@@ -62,7 +62,7 @@ describe('buildAnalysisSession', () => {
         stale: true,
       },
       {
-        horizon: 2,
+        expiryDate: '2026-07-24',
         candidate: '90',
         candidateSide: 'lower',
         netPremiumPerShare: '1.25',
@@ -76,7 +76,7 @@ describe('buildAnalysisSession', () => {
     )
     expect(plan.reportInput?.gradePaused).toBe(true)
     expect(plan.reportInput?.candidate).toEqual({
-      weeks: 2,
+      targetDate: '2026-07-24',
       price: 90,
       side: 'lower',
       netPremiumPerShare: 1.25,
@@ -102,7 +102,7 @@ describe('buildAnalysisSession', () => {
         stale: false,
       },
       {
-        horizon: 1,
+        expiryDate: '2026-07-24',
         candidate: '',
         candidateSide: 'lower',
         netPremiumPerShare: '',
@@ -113,6 +113,63 @@ describe('buildAnalysisSession', () => {
     expect(plan.gradePaused).toBe(true)
     expect(plan.pauseReasons).toContain('weekly-intraday-resolution')
     expect(plan.reportInput?.candidate).toBeUndefined()
+  })
+
+  it('requires daily history for a weekly-data midweek expiry', () => {
+    const active = dataset({
+      interval: 'weekly',
+      bars: [{ date: '2026-08-14', open: 100, high: 105, low: 95, close: 102 }],
+    })
+    const plan = buildAnalysisSession(
+      active,
+      {
+        price: 104,
+        anchorDate: '2026-08-17',
+        intraday: false,
+        mode: 'automatic',
+        paused: false,
+        stale: false,
+      },
+      {
+        expiryDate: '2026-08-19',
+        candidate: '',
+        candidateSide: 'lower',
+        annualCapitalReturnRatePct: '10',
+      },
+    )
+
+    expect(plan.expiryUnsupported).toBe(true)
+    expect(plan.pauseReasons).toContain('weekly-expiry-resolution')
+    expect(plan.reportInput).toBeUndefined()
+  })
+
+  it('keeps a short-dated daily intraday result as an ungraded preview', () => {
+    const active = dataset({
+      interval: 'daily',
+      bars: [{ date: '2026-08-14', open: 100, high: 105, low: 95, close: 102 }],
+    })
+    const plan = buildAnalysisSession(
+      active,
+      {
+        price: 104,
+        anchorDate: '2026-08-17',
+        intraday: true,
+        mode: 'automatic',
+        paused: false,
+        stale: false,
+      },
+      {
+        expiryDate: '2026-08-19',
+        candidate: '90',
+        candidateSide: 'lower',
+        annualCapitalReturnRatePct: '10',
+      },
+    )
+
+    expect(plan.shortDatedIntraday).toBe(true)
+    expect(plan.gradePaused).toBe(true)
+    expect(plan.pauseReasons).toContain('short-dated-intraday-resolution')
+    expect(plan.reportInput?.analysis.targetDates).toEqual(['2026-08-19'])
   })
 })
 

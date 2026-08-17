@@ -4,7 +4,7 @@ type EvaluationContextProps = {
   anchorDate: string;
   intraday: boolean;
   targetDate: string;
-  weeks: number;
+  tradingSessions: number;
 };
 
 function displayDate(date: string) {
@@ -15,7 +15,7 @@ export function EvaluationContext({
   anchorDate,
   intraday,
   targetDate,
-  weeks,
+  tradingSessions,
 }: EvaluationContextProps) {
   return (
     <div
@@ -28,7 +28,9 @@ export function EvaluationContext({
         {displayDate(anchorDate)} ET · {intraday ? "盤中" : "已收盤"}
       </strong>
       <ArrowRight aria-hidden="true" className="text-[#9CA3AF]" size={14} />
-      <span className="text-[#6B7280]">{weeks}週目標</span>
+      <span className="text-[#6B7280]">
+        {tradingSessions === 0 ? "當日到期" : `${tradingSessions}交易日目標`}
+      </span>
       <strong className="num text-[#0D0D0D]">
         {displayDate(targetDate)} 收盤
       </strong>

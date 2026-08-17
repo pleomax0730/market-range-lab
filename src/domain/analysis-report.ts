@@ -17,11 +17,12 @@ import type {
   HistoryDataset,
   HorizonAnalysis,
   RiskSide,
+  RiskThresholds,
 } from './types'
 import { rowsToCsv } from '../lib/export'
 
 export type CandidateRequest = {
-  weeks: number
+  targetDate: string
   price: number
   side: 'lower' | 'upper'
   netPremiumPerShare?: number
@@ -34,6 +35,8 @@ export type StatisticalReportInput = {
 }
 
 export type CandidateAnalysis = CandidateRequest & {
+  weeks: number
+  tradingSessions: number
   sampleSize: number
   result: RiskSide
   recovery?: CandidatePutRecoveryAnalysis
@@ -71,7 +74,9 @@ export type AnalysisReportContext = {
     manualSession?: 'intraday' | 'closed'
   }
   pauseReasons: string[]
-  selectedWeeks: number
+  selectedExpiryDate: string
+  selectedTradingSessions: number
+  aggressiveThresholds: RiskThresholds
   premiumAssumptions: PremiumAssumptions
 }
 
@@ -94,7 +99,9 @@ export type AnalysisReport = {
   intraday: boolean
   gradePaused: boolean
   pauseReasons: string[]
-  selectedWeeks: number
+  selectedExpiryDate: string
+  selectedTradingSessions: number
+  aggressiveThresholds: RiskThresholds
   candidate?: CandidateAnalysis
   analyses: HorizonAnalysis[]
 }
@@ -137,11 +144,11 @@ export function calculateStatisticalReport(
 ): StatisticalAnalysisReport {
   const rawAnalyses = precomputedAnalyses ?? analyzeHistory(input.analysis)
   const candidateAnalysis = input.candidate
-    ? rawAnalyses.find((analysis) => analysis.weeks === input.candidate!.weeks)
+    ? rawAnalyses.find((analysis) => analysis.targetDate === input.candidate!.targetDate)
     : undefined
   let candidate: CandidateAnalysis | undefined
   if (input.candidate && candidateAnalysis) {
-    const modeledPaths = extractModeledPaths(input.analysis, input.candidate.weeks)
+    const modeledPaths = extractModeledPaths(input.analysis, input.candidate.targetDate)
     const paths = modeledPaths.raw
     const riskPaths = input.candidate.side === 'lower'
       ? modeledPaths.lower
@@ -152,7 +159,8 @@ export function calculateStatisticalReport(
       input.candidate.side,
       riskPaths,
       candidateAnalysis.effectiveSampleSize,
-      input.candidate.weeks,
+      candidateAnalysis.weeks,
+      input.analysis.aggressiveThresholds,
     )
     const premium = input.candidate.side === 'lower'
       ? calculatePutPremiumAnalysis({
@@ -177,8 +185,10 @@ export function calculateStatisticalReport(
       : undefined
     candidate = {
       ...input.candidate,
+      weeks: candidateAnalysis.weeks,
+      tradingSessions: candidateAnalysis.tradingSessions,
       sampleSize: paths.length,
-      result: pauseCandidate(result, input.candidate.weeks, input.gradePaused),
+      result: pauseCandidate(result, candidateAnalysis.weeks, input.gradePaused),
       recovery,
       premium,
       ...(input.candidate.side === 'upper'
@@ -242,7 +252,9 @@ export function composeAnalysisReport(
     intraday: context.reference.intraday,
     gradePaused: statistical.gradePaused,
     pauseReasons: context.pauseReasons,
-    selectedWeeks: context.selectedWeeks,
+    selectedExpiryDate: context.selectedExpiryDate,
+    selectedTradingSessions: context.selectedTradingSessions,
+    aggressiveThresholds: context.aggressiveThresholds,
     candidate,
     analyses: statistical.analyses,
   }
@@ -305,9 +317,15 @@ function reportRows(report: AnalysisReport) {
         pauseReasons: report.pauseReasons.join('|'),
         anchorPrice: report.anchorPrice,
         anchorDate: report.anchorDate,
-        selectedWeeks: report.selectedWeeks,
+        selectedExpiryDate: report.selectedExpiryDate,
+        selectedTradingSessions: report.selectedTradingSessions,
+        aggressiveExpirationUpper95: report.aggressiveThresholds.expirationUpper95,
+        aggressivePathTouchUpper95: report.aggressiveThresholds.pathTouchUpper95,
         weeks: analysis.weeks,
         targetDate: analysis.targetDate,
+        tradingSessions: analysis.tradingSessions,
+        analysisAggressiveExpirationUpper95: analysis.aggressiveThresholds.expirationUpper95,
+        analysisAggressivePathTouchUpper95: analysis.aggressiveThresholds.pathTouchUpper95,
         side,
         grade: risk.grade,
         price: risk.price,
@@ -408,7 +426,9 @@ function reportRows(report: AnalysisReport) {
           ? analysis.evt.lowerDiagnostics
           : analysis.evt.upperDiagnostics,
         candidateSide: report.candidate?.side ?? '',
+        candidateTargetDate: report.candidate?.targetDate ?? '',
         candidateWeeks: report.candidate?.weeks ?? '',
+        candidateTradingSessions: report.candidate?.tradingSessions ?? '',
         candidateSampleSize: report.candidate?.sampleSize ?? '',
         candidatePrice: report.candidate?.result.price ?? '',
         candidateGrade: report.candidate?.result.grade ?? '',

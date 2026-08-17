@@ -53,34 +53,43 @@ export async function getActiveDatasetId(): Promise<string | undefined> {
 }
 
 export type DashboardSettings = {
-  settingsVersion: 3
+  settingsVersion: 5
   candidate: string
   candidateSide: 'lower' | 'upper'
-  horizon: number
+  expiryDate: string
+  aggressiveExpirationRiskPct: string
+  aggressiveTouchRiskPct: string
   annualCapitalReturnRatePct: string
 }
 
-type PersistedDashboardSettings = Omit<DashboardSettings, 'settingsVersion' | 'annualCapitalReturnRatePct'> & {
+type PersistedDashboardSettings = Partial<Omit<DashboardSettings, 'settingsVersion'>> & {
   settingsVersion?: number
+  aggressiveExpirationRiskPct?: string
+  aggressiveTouchRiskPct?: string
   annualCapitalReturnRatePct?: string
+  horizon?: number
 }
 
 export function defaultDashboardSettings(): DashboardSettings {
   return {
-    settingsVersion: 3,
+    settingsVersion: 5,
     candidate: '',
     candidateSide: 'lower',
-    horizon: 1,
+    expiryDate: '',
+    aggressiveExpirationRiskPct: '5',
+    aggressiveTouchRiskPct: '10',
     annualCapitalReturnRatePct: '10',
   }
 }
 
 export function normalizeDashboardSettings(settings: PersistedDashboardSettings): DashboardSettings {
   return {
-    settingsVersion: 3,
-    candidate: settings.candidate,
-    candidateSide: settings.candidateSide,
-    horizon: settings.horizon,
+    settingsVersion: 5,
+    candidate: settings.candidate ?? '',
+    candidateSide: settings.candidateSide === 'upper' ? 'upper' : 'lower',
+    expiryDate: /^\d{4}-\d{2}-\d{2}$/.test(settings.expiryDate ?? '') ? settings.expiryDate! : '',
+    aggressiveExpirationRiskPct: settings.aggressiveExpirationRiskPct ?? '5',
+    aggressiveTouchRiskPct: settings.aggressiveTouchRiskPct ?? '10',
     annualCapitalReturnRatePct:
       settings.annualCapitalReturnRatePct !== undefined &&
       Number.isFinite(Number(settings.annualCapitalReturnRatePct)) &&

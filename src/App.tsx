@@ -17,8 +17,18 @@ import {
   type CandidateAnalysis,
 } from "./domain/analysis-report";
 import { DEFAULT_HISTORY_SOURCE_URL } from "./domain/history-intake";
+import {
+  defaultExpiryHorizons,
+  resolveExpiryHorizon,
+  type ExpiryHorizon,
+} from "./domain/expiry-horizon";
 import { previousRegularSession } from "./domain/market-calendar";
-import { GRADE_THRESHOLDS, MODEL_VERSION } from "./domain/model";
+import {
+  DEFAULT_AGGRESSIVE_THRESHOLD_PCT,
+  GRADE_THRESHOLDS,
+  MODEL_VERSION,
+  resolveAggressiveThresholds,
+} from "./domain/model";
 import { useAnalysisSession } from "./hooks/use-analysis-session";
 import { useHistoryCatalog } from "./hooks/use-history-catalog";
 import { useReferencePrice } from "./hooks/use-reference-price";
@@ -51,6 +61,13 @@ const percent = new Intl.NumberFormat("zh-TW", {
   maximumFractionDigits: 2,
 });
 const dashboardDefaults = defaultDashboardSettings();
+const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
+
+function expiryButtonLabel(horizon: ExpiryHorizon) {
+  const [, month, day] = horizon.targetDate.split("-");
+  const weekday = weekdayLabels[new Date(`${horizon.targetDate}T12:00:00Z`).getUTCDay()];
+  return `${Number(month)}/${Number(day)}（${weekday}）· ${horizon.tradingSessions}日`;
+}
 
 function formatTime(iso: string, zone: string) {
   return new Intl.DateTimeFormat("zh-TW", {
@@ -77,7 +94,13 @@ export function App() {
     cancelImport,
     updatePendingSymbol,
   } = historyCatalog;
-  const [horizon, setHorizon] = useState(dashboardDefaults.horizon);
+  const [expiryDate, setExpiryDate] = useState(dashboardDefaults.expiryDate);
+  const [aggressiveExpirationRiskPct, setAggressiveExpirationRiskPct] = useState(
+    dashboardDefaults.aggressiveExpirationRiskPct,
+  );
+  const [aggressiveTouchRiskPct, setAggressiveTouchRiskPct] = useState(
+    dashboardDefaults.aggressiveTouchRiskPct,
+  );
   const [candidate, setCandidate] = useState(dashboardDefaults.candidate);
   const [candidateSide, setCandidateSide] = useState<"lower" | "upper">(
     dashboardDefaults.candidateSide,
@@ -113,44 +136,87 @@ export function App() {
         const normalized = normalizeDashboardSettings(settings);
         setCandidate(normalized.candidate);
         setCandidateSide(normalized.candidateSide);
-        setHorizon(normalized.horizon);
+        setExpiryDate(normalized.expiryDate);
+        setAggressiveExpirationRiskPct(normalized.aggressiveExpirationRiskPct);
+        setAggressiveTouchRiskPct(normalized.aggressiveTouchRiskPct);
         setAnnualCapitalReturnRatePct(normalized.annualCapitalReturnRatePct);
       }
       setSettingsLoaded(true);
     })();
   }, []);
 
+  const quickExpiries = useMemo(
+    () => /^\d{4}-\d{2}-\d{2}$/.test(anchorDate)
+      ? defaultExpiryHorizons(anchorDate, analysisIntraday)
+      : [],
+    [anchorDate, analysisIntraday],
+  );
+  const selectedExpiryDate = useMemo(() => {
+    const current = resolveExpiryHorizon(anchorDate, expiryDate);
+    return !expiryDate || expiryDate < anchorDate || (current?.tradingSessions === 0 && !analysisIntraday)
+      ? quickExpiries[0]?.targetDate ?? expiryDate
+      : expiryDate;
+  }, [analysisIntraday, anchorDate, expiryDate, quickExpiries]);
+  const selectedExpiryHorizon = useMemo(
+    () => resolveExpiryHorizon(anchorDate, selectedExpiryDate),
+    [anchorDate, selectedExpiryDate],
+  );
+  const aggressiveThresholdState = useMemo(
+    () => resolveAggressiveThresholds(aggressiveExpirationRiskPct, aggressiveTouchRiskPct),
+    [aggressiveExpirationRiskPct, aggressiveTouchRiskPct],
+  );
+  const aggressiveThresholdError = aggressiveThresholdState.valid
+    ? undefined
+    : "到期需 ≥ 2%、觸及需 ≥ 5%，且觸及門檻不可低於到期門檻；暫以預設 5%／10% 計算。";
+  const quickExpirySelection = quickExpiries.some((item) => item.targetDate === selectedExpiryDate)
+    ? selectedExpiryDate
+    : "custom";
+
   useEffect(() => {
     if (!settingsLoaded) return;
     const timer = window.setTimeout(
       () =>
         void saveDashboardSettings({
-          settingsVersion: 3,
+          settingsVersion: 5,
           candidate,
           candidateSide,
-          horizon,
+          expiryDate: selectedExpiryDate,
+          aggressiveExpirationRiskPct,
+          aggressiveTouchRiskPct,
           annualCapitalReturnRatePct,
         }),
       300,
     );
     return () => window.clearTimeout(timer);
   }, [
+    annualCapitalReturnRatePct,
     candidate,
     candidateSide,
-    horizon,
-    annualCapitalReturnRatePct,
+    aggressiveExpirationRiskPct,
+    aggressiveTouchRiskPct,
+    selectedExpiryDate,
     settingsLoaded,
   ]);
 
   const sessionKnobs = useMemo(
     () => ({
-      horizon,
+      expiryDate: selectedExpiryDate,
+      aggressiveExpirationRiskPct,
+      aggressiveTouchRiskPct,
       candidate,
       candidateSide,
       netPremiumPerShare,
       annualCapitalReturnRatePct,
     }),
-    [annualCapitalReturnRatePct, candidate, candidateSide, horizon, netPremiumPerShare],
+    [
+      aggressiveExpirationRiskPct,
+      aggressiveTouchRiskPct,
+      annualCapitalReturnRatePct,
+      candidate,
+      candidateSide,
+      netPremiumPerShare,
+      selectedExpiryDate,
+    ],
   );
   const {
     report,
@@ -159,6 +225,9 @@ export function App() {
     error: analysisError,
     historyStale,
     weeklyIntraday,
+    expiryUnsupported,
+    shortDatedIntraday,
+    pauseReasons,
     gradePaused,
   } = useAnalysisSession({
     dataset: active,
@@ -166,11 +235,11 @@ export function App() {
     knobs: sessionKnobs,
   });
   const analyses = report?.analyses ?? [];
-  const selected = analyses[horizon - 1];
+  const selected = analyses.find((analysis) => analysis.targetDate === selectedExpiryDate);
   const candidateResult = Number(candidate) > 0
-    ? report?.candidate?.weeks === horizon
+    ? report?.candidate?.targetDate === selectedExpiryDate
       ? report.candidate
-      : analysisLoading && staleCandidate?.weeks === horizon
+      : analysisLoading && staleCandidate?.targetDate === selectedExpiryDate
         ? staleCandidate
         : undefined
     : undefined;
@@ -588,46 +657,134 @@ export function App() {
                 </section>
               )}
               <section className="panel p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">目標週收盤區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin-fast" />統計更新中</span>}</div>
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">到期價格區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin-fast" />統計更新中</span>}</div>
                     <p className="mt-1 text-xs text-[#6B7280]">
                       {active.interval === "weekly"
-                        ? "Weekly-only：以每週 OHLC 建立連續週期路徑；週收盤與週內 High/Low 可分析，但無法還原逐日先後順序。"
+                        ? "Weekly-only：只支援每週最後正常交易日到期；週中到期需要 Daily CSV。"
                         : analysisIntraday
-                        ? "Intraday Conservative Preview：以當前價為錨，沿用歷史 Open→High/Low/Close 全時段路徑。"
-                        : "已收盤錨定：從下一交易時段開始計算路徑。"}
+                        ? "盤中預覽：以當前價為錨，按到期前剩餘交易日建立歷史路徑。"
+                        : "已收盤錨定：從下一交易日開始，按實際剩餘交易日計算路徑。"}
                     </p>
-                    {historyStale && (
-                      <p className="mt-1 text-xs font-semibold text-red-700">
-                        {active.interval === "daily"
-                          ? `Daily CSV 未更新至前一正常交易日 ${previousRegularSession(anchorDate)}，分級已暫停。`
-                          : "Weekly CSV 距參考日超過兩週，分級已暫停。"}
-                      </p>
-                    )}
-                    {weeklyIntraday && (
-                      <p className="mt-1 text-xs font-semibold text-red-700">
-                        Weekly-only 無法重建盤中剩餘交易日，價格區間僅作情境預覽，分級已暫停。
-                      </p>
-                    )}
-                    {analysisError && <p className="mt-1 text-xs font-semibold text-red-700">{analysisError}</p>}
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {analyses.map((item) => (
-                      <Button
-                        key={item.weeks}
-                        size="sm"
-                        variant={horizon === item.weeks ? "accent" : "outline"}
-                        onClick={() => {
-                          setHorizon(item.weeks);
+                  <div className="grid w-full gap-2 sm:max-w-[500px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <label className="min-w-0">
+                      <span className="field-label field-label-control">
+                        <TermHelp explanation="請依券商實際列出的選擇權到期日選擇。平台不連接 option chain，因此不會自動判斷哪些日期可交易。">到期日（ET）</TermHelp>
+                      </span>
+                      <Input
+                        className="w-full"
+                        type="date"
+                        min={anchorDate}
+                        max={quickExpiries.at(-1)?.targetDate}
+                        value={selectedExpiryDate}
+                        onChange={(event) => {
+                          setExpiryDate(event.target.value);
+                          setNetPremiumPerShare("");
+                        }}
+                      />
+                    </label>
+                    <label className="min-w-0">
+                      <span className="field-label field-label-control">快速選擇每週到期</span>
+                      <select
+                        className="h-10 w-full rounded-md border border-[#D8D8D8] bg-white px-3 text-sm"
+                        value={quickExpirySelection}
+                        onChange={(event) => {
+                          if (event.target.value === "custom") return;
+                          setExpiryDate(event.target.value);
                           setNetPremiumPerShare("");
                         }}
                       >
-                        {item.weeks}週
-                      </Button>
-                    ))}
+                        <option value="custom">自訂日期（目前選擇）</option>
+                        {quickExpiries.map((item) => (
+                          <option key={item.targetDate} value={item.targetDate}>
+                            {expiryButtonLabel(item)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 </div>
+                <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6B7280]">
+                  {selectedExpiryHorizon && <span className="num">距評估基準 {selectedExpiryHorizon.tradingSessions} 個交易日</span>}
+                  <span>每週快捷不代表券商一定提供該到期日；請以 IBKR 實際鏈上日期為準。</span>
+                </div>
+                <details className="group mb-4 border-y border-[#EFEFEF] py-2">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[#565656] outline-none focus-visible:ring-2 focus-visible:ring-blue-600 [&::-webkit-details-marker]:hidden">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <TermHelp explanation="激進門檻是可調的風險偏好，不是市場共識；保守與安全門檻不會被改動。">
+                        激進風險門檻
+                      </TermHelp>
+                      <span className="num font-normal text-[#6B7280]">到期 {aggressiveExpirationRiskPct}% · 觸及 {aggressiveTouchRiskPct}%</span>
+                    </span>
+                    <ChevronDown className="transition-transform duration-150 group-open:rotate-180" size={15} />
+                  </summary>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+                    <label>
+                      <span className="field-label">到期跌破上限（%）</span>
+                      <Input
+                        className="num"
+                        type="number"
+                        min="2"
+                        max="100"
+                        step="0.1"
+                        value={aggressiveExpirationRiskPct}
+                        onChange={(event) => setAggressiveExpirationRiskPct(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span className="field-label">期間觸及上限（%）</span>
+                      <Input
+                        className="num"
+                        type="number"
+                        min="5"
+                        max="100"
+                        step="0.1"
+                        value={aggressiveTouchRiskPct}
+                        onChange={(event) => setAggressiveTouchRiskPct(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="h-10 rounded-md px-3 text-xs font-semibold text-[#565656] underline decoration-dotted underline-offset-4 hover:text-[#0D0D0D]"
+                      onClick={() => {
+                        setAggressiveExpirationRiskPct(DEFAULT_AGGRESSIVE_THRESHOLD_PCT.expiration);
+                        setAggressiveTouchRiskPct(DEFAULT_AGGRESSIVE_THRESHOLD_PCT.pathTouch);
+                      }}
+                    >
+                      恢復預設
+                    </button>
+                  </div>
+                  <p className={`mt-2 text-xs ${aggressiveThresholdError ? "font-semibold text-amber-700" : "text-[#6B7280]"}`}>
+                    {aggressiveThresholdError ?? "預設 5%／10%；影響激進價格邊界與自訂價格分級，保守／安全門檻維持不變。"}
+                  </p>
+                </details>
+                {historyStale && (
+                  <p className="mt-1 text-xs font-semibold text-red-700">
+                    {active.interval === "daily"
+                      ? `Daily CSV 未更新至前一正常交易日 ${previousRegularSession(anchorDate)}，分級已暫停。`
+                      : "Weekly CSV 距參考日超過兩週，分級已暫停。"}
+                  </p>
+                )}
+                {weeklyIntraday && (
+                  <p className="mt-1 text-xs font-semibold text-red-700">
+                    Weekly-only 無法重建盤中剩餘交易日，價格區間僅作情境預覽，分級已暫停。
+                  </p>
+                )}
+                {expiryUnsupported && (
+                  <p className="mt-1 text-xs font-semibold text-red-700">
+                    {pauseReasons.includes("weekly-expiry-resolution")
+                      ? "這個週中到期日無法由 Weekly CSV 還原；請匯入 Daily CSV，或改選每週最後正常交易日。"
+                      : "請選擇參考日後、八週範圍內的正常交易日；已收盤後不可再分析當日到期。"}
+                  </p>
+                )}
+                {shortDatedIntraday && (
+                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                    盤中且剩餘不超過 3 個交易日：Daily OHLC 沒有相同時刻的歷史切片，區間可預覽，但分級暫停。
+                  </p>
+                )}
+                {analysisError && <p className="mt-1 text-xs font-semibold text-red-700">{analysisError}</p>}
                 {selected && (
                   <RiskTable
                     analysis={selected}
@@ -649,12 +806,12 @@ export function App() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-sm font-bold">自訂價格評估</h2>
-                      <Tooltip content="Candidate Price（候選價）不做履約價間距取整；Reference Date、Session、Horizon 與 Target Week Close 沿用目前分析。">
+                      <Tooltip content="候選價不做履約價間距取整；參考日、盤中／收盤狀態、到期日與剩餘交易日沿用目前分析。">
                         <Info size={14} className="text-[#6B7280]" />
                       </Tooltip>
                     </div>
                     <p className="mt-1 text-xs text-[#6B7280]">
-                      輸入任意價格，檢查它在目前週期的歷史跌破、觸及與 Premium 壓力參考。
+                      輸入任意價格，檢查它在所選到期日前的歷史跌破、觸及與 Premium 壓力參考。
                     </p>
                   </div>
                   {selected && (
@@ -662,7 +819,7 @@ export function App() {
                       anchorDate={anchorDate}
                       intraday={analysisIntraday}
                       targetDate={selected.targetDate}
-                      weeks={selected.weeks}
+                      tradingSessions={selected.tradingSessions}
                     />
                   )}
                 </div>
@@ -753,7 +910,7 @@ export function App() {
                       模型邊界 · v{MODEL_VERSION}
                     </strong>
                     <p className="mt-1">
-                      全歷史等權、{active.interval === "daily" ? "同週內位置配對" : "連續週線配對"}、當前波動較不利包絡、連續區塊 bootstrap、單側 95% 分級上限與 expanding-window 樣本外回測。EVT
+                      全歷史等權、{active.interval === "daily" ? "同星期位置與同交易日跨度配對" : "連續週線配對"}、當前波動較不利包絡、連續區塊 bootstrap、單側 95% 分級上限與 expanding-window 樣本外回測。EVT
                       只作尾部壓力，不直接認證分級，也不假設正態分配。此工具不是投資建議。
                     </p>
                   </div>
@@ -781,9 +938,15 @@ function RiskTable({
   const rows = [
     analysis.lower[0],
     analysis.lower[1],
+    analysis.lower[2],
+    analysis.upper[2],
     analysis.upper[1],
     analysis.upper[0],
   ];
+  const sideLabels = ["下檔 / Put", "下檔 / Put", "下檔 / Put", "上檔 / Call", "上檔 / Call", "上檔 / Call"];
+  const gradeLabels = { conservative: "保守", safe: "安全", aggressive: "激進" } as const;
+  const thresholdFor = (grade: "conservative" | "safe" | "aggressive") =>
+    grade === "aggressive" ? analysis.aggressiveThresholds : GRADE_THRESHOLDS[grade];
   return (
     <div>
       <PutDecisionSummary analysis={analysis} stale={stale} />
@@ -826,7 +989,7 @@ function RiskTable({
               className="border-b border-[#EFEFEF]"
             >
               <td className="table-sticky-first px-3 py-3 font-medium">
-                {index < 2 ? "下檔 / Put" : "上檔 / Call"}
+                {sideLabels[index]}
               </td>
               <td className="table-sticky-second px-3 py-3">
                 {row.basis === "model-estimate" ? (
@@ -843,7 +1006,7 @@ function RiskTable({
                   </TermHelp>
                 ) : row.meetsTarget === false ? (
                   <TermHelp
-                    explanation={`門檻不可達：目前有效樣本 N_eff=${analysis.effectiveSampleSize} 下，找不到任何${index < 2 ? "下檔" : "上檔"}價格能同時滿足${row.requestedGrade === "conservative" ? "保守" : "安全"}門檻（到期單側 95% 上限 ≤ ${percent.format(GRADE_THRESHOLDS[row.requestedGrade ?? "conservative"].expirationUpper95)}、觸及單側 95% 上限 ≤ ${percent.format(GRADE_THRESHOLDS[row.requestedGrade ?? "conservative"].pathTouchUpper95)}）。`}
+                    explanation={`門檻不可達：目前有效樣本 N_eff=${analysis.effectiveSampleSize} 下，找不到任何${index < 3 ? "下檔" : "上檔"}價格能同時滿足${gradeLabels[row.requestedGrade ?? "conservative"]}門檻（到期單側 95% 上限 ≤ ${percent.format(thresholdFor(row.requestedGrade ?? "conservative").expirationUpper95)}、觸及單側 95% 上限 ≤ ${percent.format(thresholdFor(row.requestedGrade ?? "conservative").pathTouchUpper95)}）。`}
                   >
                     <span className="risk-insufficient inline-flex rounded px-2 py-1 text-xs font-bold">
                       門檻不可達
@@ -993,7 +1156,7 @@ function RiskTable({
       <BacktestSummary analysis={analysis} />
       {analysis.weeks > 4 && (
         <p className="mt-3 text-xs text-[#6B7280]">
-          5–8 週只是情境分析，不顯示門檻決策等級。
+          超過 4 週只是情境分析，不顯示門檻決策等級。
         </p>
       )}
     </div>
@@ -1051,7 +1214,7 @@ function CandidateResult({
         )}
       </div>
       <div>
-        <span className="field-label"><TermHelp explanation="到期估計是目標週收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
+        <span className="field-label"><TermHelp explanation="到期估計是所選到期日收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.expirationBreach)} / [
           {percent.format(result.expirationLower95)},{" "}
@@ -1066,7 +1229,7 @@ function CandidateResult({
         </small>
       </div>
       <div>
-        <span className="field-label"><TermHelp explanation="盤中觸及會檢查整條價格路徑的最高或最低點，因此通常高於只看週收盤的到期穿越機率；中括號是雙側 95% CI。">盤中觸及估計 / 雙側 95% CI</TermHelp></span>
+        <span className="field-label"><TermHelp explanation="期間觸及會檢查參考時點至到期日的整條價格路徑最高或最低點，因此通常高於只看到期收盤的穿越機率；中括號是雙側 95% CI。">期間觸及估計 / 雙側 95% CI</TermHelp></span>
         <strong className="num">
           {percent.format(result.pathTouch)} / [
           {percent.format(result.pathTouchLower95)},{" "}

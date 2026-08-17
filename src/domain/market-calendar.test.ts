@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { previousOrSameRegularSession, targetWeekClose } from './market-calendar'
+import {
+  advanceRegularSessions,
+  previousOrSameRegularSession,
+  regularSessionsAfter,
+  targetWeekClose,
+} from './market-calendar'
 
 describe('targetWeekClose', () => {
   it('uses Thursday when Good Friday closes the market', () => {
@@ -18,4 +23,13 @@ describe('targetWeekClose', () => {
     expect(previousOrSameRegularSession('2026-07-19')).toBe('2026-07-17')
   })
 
+})
+
+describe('trading-session expiry spans', () => {
+  it('counts Monday to Wednesday and Friday by actual regular sessions', () => {
+    expect(regularSessionsAfter('2026-08-17', '2026-08-19')).toBe(2)
+    expect(regularSessionsAfter('2026-08-17', '2026-08-21')).toBe(4)
+    expect(advanceRegularSessions('2026-08-17', 2)).toBe('2026-08-19')
+    expect(advanceRegularSessions('2026-08-17', 4)).toBe('2026-08-21')
+  })
 })

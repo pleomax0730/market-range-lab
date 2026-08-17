@@ -1,6 +1,6 @@
 # Market Range Lab
 
-本機儀表板：匯入美股／ETF 的 split-adjusted OHLC 歷史，搭配常規盤（regular session）報價，估計未來 1–8 個交易週收盤的上下檔價格區間，並回報到期收盤跌破／觸及機率與不確定性。
+本機儀表板：匯入美股／ETF 的 split-adjusted OHLC 歷史，搭配常規盤（regular session）報價，估計未來八週內任一正常交易日到期的上下檔價格區間，並回報到期收盤跌破／期間觸及機率與不確定性。
 
 **這不是下單工具，也不提供部位大小或投資建議。**
 
@@ -9,7 +9,7 @@
 - 匯入 **Daily**（優先）或 **Weekly-only** CSV 作為 Canonical Price History；Daily 可一次多選同一 Symbol 的分段檔案並依日期合併
 - 從檔名推斷 Symbol；必要時可確認 Yahoo ticker（例如 `PALANTIR` → `PLTR`）
 - 本機 Express／Vite 代理 Yahoo 常規盤報價；可手動覆寫 Reference Price
-- 全歷史等權路徑 + 週內位置配對（Daily）或連續週線路徑（Weekly）
+- 全歷史等權路徑 + 同星期位置／同交易日跨度配對（Daily）或連續週線路徑（Weekly）
 - 波動調整的較不利包絡、區塊 bootstrap 95% 區間、單側 95% 風險上限分級
 - 樣本外 Put 履約率、週內跌破率，以及 Kaplan–Meier 履約後價格回復時間
 - 自訂 Put 以相同價內外比例重播原始歷史；可選填淨 Premium 比較回到履約價與損益兩平價
@@ -26,7 +26,7 @@
 | 儲存 | IndexedDB（`idb`） |
 | 測試 | Vitest、Testing Library |
 
-模型版本：`1.5.0`（見 `src/domain/model.ts`）
+模型版本：`1.6.0`（見 `src/domain/model.ts`）
 
 ## 環境需求
 
@@ -79,8 +79,8 @@ http://127.0.0.1:4173
    重複日期、無效 OHLC、疑似拆股不連續等會以錯誤或警告顯示。Daily 需涵蓋至參考日前一正常交易日才可分級；過舊歷史仍可算區間但暫停 Safety Grade。
 4. **報價**  
    以 Active Symbol 向 Yahoo 查常規盤價；盤中約每 30 秒更新。開盤中報價超過約 2 分鐘視為 stale，自動分級會暫停，可改手動 Reference Price。
-5. **閱讀區間**  
-   一次計算未來 1–8 個 Target Week Close。1–4 週為 Decision-Grade；5–8 週為 Scenario，僅情境、不分級。
+5. **選擇到期日並閱讀區間**
+   依券商實際提供的到期日手動選擇；介面提供未來八個每週到期快捷日期。Daily 可分析八週內任一正常交易日，Weekly-only 只支援每週最後正常交易日。實際跨度不超過四週為 Decision-Grade，超過四週為 Scenario。
 6. **自訂候選價**  
    輸入任意連續價格，選下檔／Put 或上檔／Call，檢視跌破、路徑觸及與（Put）Premium 參考。
 7. **匯出**  
@@ -117,18 +117,20 @@ http://127.0.0.1:4173
 完整詞彙見 [CONTEXT.md](./CONTEXT.md)，產品規格見 [docs/product-spec.md](./docs/product-spec.md)。
 
 - **Full-History Baseline**：有效歷史全用，路徑等權，不做 recency 加權。
-- **Week-Position-Matched Path（Daily）**：起點 weekday 與目前分析對齊，終點對應 Target Week Close。
+- **Session-Span-Matched Path（Daily）**：起點 weekday 與目前分析對齊，終點按到期前的實際剩餘正常交易日數推進。
 - **Contiguous Weekly Path（Weekly-only）**：連續週線 bar；不可還原日內先後。
 - **Volatility-Adjusted Path**：以當前已實現波動相對路徑起點波動縮放 log 報酬（約 0.5×–2×），分級取原路徑與調整後較不利者。
 - **Safety Grade**（1–4 週且有效路徑足夠）：以單側 95% 風險上限，非點估計。
+- **Aggressive Grade**：在同一套單側 95% 風險上限下，預設到期 5%、路徑觸及 10%；可在「激進風險門檻」展開區自訂，但必須不低於 Safe 門檻。
 
 | 內部等級 | UI 標籤 | 到期跌破上限 | 路徑觸及上限 |
 | --- | --- | ---: | ---: |
 | Conservative | 符合保守門檻 | ≤ 0.5% | ≤ 1% |
 | Safe | 符合安全門檻 | ≤ 2% | ≤ 5% |
+| Aggressive | 符合激進門檻 | ≤ 5%（預設，可調） | ≤ 10%（預設，可調） |
 | Dangerous | 超出安全門檻 | 任一超過 Safe | 任一超過 Safe |
 
-有效獨立路徑少於約 100、Scenario 週期、歷史過舊、報價 stale／缺失、或 Weekly 盤中預覽時，可能顯示結果但**不給分級**。
+有效獨立路徑少於約 100、Scenario 週期、歷史過舊、報價 stale／缺失、Weekly 盤中預覽，或三個交易日內的 Daily 盤中短天期預覽時，可能顯示結果但**不給分級**。
 
 **Conservative Model Estimate** 與 **95% Certified Boundary** 分開顯示；EVT 僅作尾部壓力、不單獨認證分級。
 

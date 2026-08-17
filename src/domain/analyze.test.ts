@@ -2,6 +2,52 @@ import { describe, expect, it } from 'vitest'
 import { analyzeHistory, backtestHistoricalPaths, estimateEffectiveSampleSize, extractMatchedPaths, extractModeledPaths, repriceAnalyses } from './analyze'
 
 describe('extractMatchedPaths', () => {
+  it('uses the exact remaining-session span for midweek and Friday expiries', () => {
+    const bars = [
+      { date: '2026-07-06', open: 100, high: 101, low: 99, close: 100 },
+      { date: '2026-07-07', open: 100, high: 102, low: 98, close: 101 },
+      { date: '2026-07-08', open: 101, high: 104, low: 97, close: 102 },
+      { date: '2026-07-09', open: 102, high: 106, low: 96, close: 104 },
+      { date: '2026-07-10', open: 104, high: 108, low: 95, close: 107 },
+    ]
+
+    const wednesday = extractMatchedPaths(bars, '2026-08-17', '2026-08-19', false)
+    const friday = extractMatchedPaths(bars, '2026-08-17', '2026-08-21', false)
+
+    expect(wednesday).toHaveLength(1)
+    expect(friday).toHaveLength(1)
+    expect(wednesday[0].closeReturn).toBeCloseTo(0.02)
+    expect(friday[0].closeReturn).toBeCloseTo(0.07)
+    expect(wednesday[0].targetDate).toBe('2026-07-08')
+    expect(friday[0].targetDate).toBe('2026-07-10')
+  })
+
+  it('keeps different expiries distinct even when both derive to one week', () => {
+    const start = new Date('2026-06-01T00:00:00Z')
+    const bars = Array.from({ length: 56 }, (_, index) => {
+      const date = new Date(start)
+      date.setUTCDate(start.getUTCDate() + index)
+      const day = date.getUTCDay()
+      if (day === 0 || day === 6) return undefined
+      const close = 100 + index / 10
+      return { date: date.toISOString().slice(0, 10), open: close, high: close + 1, low: close - 1, close }
+    }).filter((bar): bar is NonNullable<typeof bar> => Boolean(bar))
+
+    const analyses = analyzeHistory({
+      bars,
+      anchorPrice: 105,
+      anchorDate: '2026-08-17',
+      intraday: false,
+      interval: 'daily',
+      targetDates: ['2026-08-19', '2026-08-21'],
+    })
+
+    expect(analyses.map(({ targetDate, tradingSessions, weeks }) => ({ targetDate, tradingSessions, weeks }))).toEqual([
+      { targetDate: '2026-08-19', tradingSessions: 2, weeks: 1 },
+      { targetDate: '2026-08-21', tradingSessions: 4, weeks: 1 },
+    ])
+  })
+
   it('rolls a closed Friday start into the following target week', () => {
     const bars = [
       { date: '2026-07-17', open: 100, high: 101, low: 99, close: 100 },

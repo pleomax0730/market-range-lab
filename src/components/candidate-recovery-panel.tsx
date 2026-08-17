@@ -153,7 +153,7 @@ export function CandidateRecoveryPanel({
       <section className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
         <h3 className="text-sm font-bold">歷史履約後價格回復</h3>
         <p className="mt-2 text-xs leading-5 text-[#6B7280]">
-          沒有足夠的同星期幾、同週期原始歷史路徑，目前無法估計履約後的價格回復。
+          沒有足夠的同星期幾、同交易日跨度原始歷史路徑，目前無法估計履約後的價格回復。
         </p>
       </section>
     )
@@ -184,7 +184,7 @@ export function CandidateRecoveryPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold">
-            <TermHelp explanation="用目前候選 Put 的履約價／當前價比例，映射到同星期幾、同週期的完整原始歷史。只把到期收盤低於歷史等值履約價視為履約，再追蹤後續收盤首次回到目標價格。">
+            <TermHelp explanation="用目前候選 Put 的履約價／當前價比例，映射到同星期幾、同交易日跨度的完整原始歷史。只把到期收盤低於歷史等值履約價視為履約，再追蹤後續收盤首次回到目標價格。">
               歷史履約後價格回復
             </TermHelp>
           </h3>

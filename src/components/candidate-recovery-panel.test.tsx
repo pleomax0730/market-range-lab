@@ -17,7 +17,9 @@ const windows = [5, 20, 60].map((periods) => ({
 }))
 
 const candidate: CandidateAnalysis = {
+  targetDate: '2026-07-24',
   weeks: 1,
+  tradingSessions: 4,
   price: 67,
   side: 'lower',
   netPremiumPerShare: 1.25,

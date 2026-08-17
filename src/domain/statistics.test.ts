@@ -8,7 +8,7 @@ describe('statistics primitives', () => {
   it('uses both expiration and touch confidence limits', () => {
     expect(classifyRisk(0.004, 0.009, 120, 2)).toBe('conservative')
     expect(classifyRisk(0.015, 0.04, 120, 2)).toBe('safe')
-    expect(classifyRisk(0.03, 0.04, 120, 2)).toBe('dangerous')
+    expect(classifyRisk(0.03, 0.04, 120, 2)).toBe('aggressive')
     expect(classifyRisk(0, 0, 80, 2)).toBe('insufficient')
     expect(classifyRisk(0, 0, 500, 6)).toBe('scenario')
   })

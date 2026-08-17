@@ -41,7 +41,14 @@ export type ImportResult = {
   warnings: ImportIssue[]
 }
 
-export type RiskGrade = 'conservative' | 'safe' | 'dangerous' | 'insufficient' | 'scenario'
+export type DecisionGrade = 'conservative' | 'safe' | 'aggressive'
+
+export type RiskGrade = DecisionGrade | 'dangerous' | 'insufficient' | 'scenario'
+
+export type RiskThresholds = {
+  expirationUpper95: number
+  pathTouchUpper95: number
+}
 
 export type RiskSide = {
   price: number
@@ -55,7 +62,7 @@ export type RiskSide = {
   pathTouchUpper95: number
   pathTouchRiskUpper95: number
   grade: RiskGrade
-  requestedGrade?: 'conservative' | 'safe'
+  requestedGrade?: DecisionGrade
   meetsTarget?: boolean
   basis?: 'certified' | 'model-estimate'
 }
@@ -119,10 +126,12 @@ export type HorizonBacktest = {
   lower: {
     conservative: BacktestResult
     safe: BacktestResult
+    aggressive: BacktestResult
   }
   upper: {
     conservative: BacktestResult
     safe: BacktestResult
+    aggressive: BacktestResult
   }
 }
 
@@ -135,8 +144,10 @@ export type DownsideDistributionPoint = {
 export type HorizonAnalysis = {
   weeks: number
   targetDate: string
+  tradingSessions: number
   sampleSize: number
   effectiveSampleSize: number
+  aggressiveThresholds: RiskThresholds
   lower: RiskSide[]
   upper: RiskSide[]
   downsideDistribution: DownsideDistributionPoint[]

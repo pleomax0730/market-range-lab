@@ -1,5 +1,5 @@
-import { GRADE_THRESHOLDS } from '../domain/model'
-import type { BacktestResult, HorizonAnalysis } from '../domain/types'
+import { DEFAULT_AGGRESSIVE_THRESHOLDS, GRADE_THRESHOLDS } from '../domain/model'
+import type { BacktestResult, DecisionGrade, HorizonAnalysis, RiskThresholds } from '../domain/types'
 import { TermHelp } from './term-help'
 import { Tooltip } from './ui/tooltip'
 
@@ -16,8 +16,12 @@ function formatPeriods(value: number) {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
 }
 
-function historicalFrequencyStatus(result: BacktestResult, grade: 'conservative' | 'safe') {
-  const threshold = GRADE_THRESHOLDS[grade]
+function historicalFrequencyStatus(
+  result: BacktestResult,
+  grade: DecisionGrade,
+  aggressiveThresholds: RiskThresholds = DEFAULT_AGGRESSIVE_THRESHOLDS,
+) {
+  const threshold = grade === 'aggressive' ? aggressiveThresholds : GRADE_THRESHOLDS[grade]
   const expirationExceeded = result.expirationRate > threshold.expirationUpper95
   const pathTouchExceeded = result.pathTouchRate > threshold.pathTouchUpper95
   const label = expirationExceeded && pathTouchExceeded
@@ -25,7 +29,7 @@ function historicalFrequencyStatus(result: BacktestResult, grade: 'conservative'
     : expirationExceeded
       ? '到期率超標'
       : pathTouchExceeded
-        ? '週內觸及率超標'
+        ? '期間觸及率超標'
         : '回測頻率達標'
 
   return {
@@ -33,7 +37,7 @@ function historicalFrequencyStatus(result: BacktestResult, grade: 'conservative'
     label,
     explanation: [
       `樣本外實際到期率 ${percent.format(result.expirationRate)}（目標不高於 ${percent.format(threshold.expirationUpper95)}）。`,
-      `樣本外實際週內觸及率 ${percent.format(result.pathTouchRate)}（目標不高於 ${percent.format(threshold.pathTouchUpper95)}）。`,
+      `樣本外實際期間觸及率 ${percent.format(result.pathTouchRate)}（目標不高於 ${percent.format(threshold.pathTouchUpper95)}）。`,
       '這是歷史回測頻率校準，不等於目前候選價已通過單側 95% 證據認證。',
     ].join(' '),
   }
@@ -130,12 +134,14 @@ function PutBacktestEvidence({
   label,
   grade,
   result,
+  aggressiveThresholds,
 }: {
   label: string
-  grade: 'conservative' | 'safe'
+  grade: DecisionGrade
   result: BacktestResult
+  aggressiveThresholds: RiskThresholds
 }) {
-  const status = historicalFrequencyStatus(result, grade)
+  const status = historicalFrequencyStatus(result, grade, aggressiveThresholds)
   return (
     <article className="p-3 sm:p-4">
       <div className="flex items-center justify-between gap-3">
@@ -164,7 +170,7 @@ function PutBacktestEvidence({
         <div>
           <dt className="text-[#6B7280]">
             <TermHelp explanation="該週最低價曾低於當時模型 Put 履約價。盤中觸及不等於到期履約。">
-              週內曾跌破
+              期間曾跌破
             </TermHelp>
           </dt>
           <dd className="num mt-0.5 text-base font-semibold">
@@ -178,7 +184,7 @@ function PutBacktestEvidence({
   )
 }
 
-export function BacktestSummary({ analysis }: { analysis: Pick<HorizonAnalysis, 'weeks' | 'backtest'> }) {
+export function BacktestSummary({ analysis }: { analysis: Pick<HorizonAnalysis, 'weeks' | 'backtest'> & Partial<Pick<HorizonAnalysis, 'aggressiveThresholds'>> }) {
   if (analysis.weeks > 4) return null
   if (!analysis.backtest) {
     return (
@@ -192,14 +198,16 @@ export function BacktestSummary({ analysis }: { analysis: Pick<HorizonAnalysis, 
   }
 
   const backtest = analysis.backtest
+  const aggressiveThresholds = analysis.aggressiveThresholds ?? DEFAULT_AGGRESSIVE_THRESHOLDS
   const predictions = backtest.lower.safe.predictions
   const period = backtest.predictionStartDate && backtest.predictionEndDate
     ? `${formatDate(backtest.predictionStartDate)}–${formatDate(backtest.predictionEndDate)}`
     : undefined
   const callEntries = [
+    { label: '激進', grade: 'aggressive' as const, result: backtest.upper.aggressive as BacktestResult | undefined },
     { label: '安全', grade: 'safe' as const, result: backtest.upper.safe },
     { label: '保守', grade: 'conservative' as const, result: backtest.upper.conservative },
-  ]
+  ].filter((entry): entry is { label: string; grade: DecisionGrade; result: BacktestResult } => Boolean(entry.result))
 
   return (
     <section className="mt-4 border-t border-[#EFEFEF] pt-4">
@@ -210,16 +218,17 @@ export function BacktestSummary({ analysis }: { analysis: Pick<HorizonAnalysis, 
               歷史實戰驗證
             </TermHelp>
           </h4>
-          <p className="mt-1 text-xs text-[#6B7280]">先看 Put 的履約、週內跌破與資金可能受困時間。</p>
+          <p className="mt-1 text-xs text-[#6B7280]">先看 Put 的履約、到期前跌破與資金可能受困時間。</p>
         </div>
         <span className="text-right text-xs text-[#6B7280]">
           {predictions} 次樣本外預測{period ? ` · ${period}` : ''}
         </span>
       </div>
 
-      <div className="mt-3 grid divide-y divide-[#E5E5E5] border-y border-[#E5E5E5] md:grid-cols-2 md:divide-x md:divide-y-0">
-        <PutBacktestEvidence label="保守" grade="conservative" result={backtest.lower.conservative} />
-        <PutBacktestEvidence label="安全" grade="safe" result={backtest.lower.safe} />
+      <div className="mt-3 grid divide-y divide-[#E5E5E5] border-y border-[#E5E5E5] md:grid-cols-3 md:divide-x md:divide-y-0">
+        <PutBacktestEvidence label="保守" grade="conservative" result={backtest.lower.conservative} aggressiveThresholds={aggressiveThresholds} />
+        <PutBacktestEvidence label="安全" grade="safe" result={backtest.lower.safe} aggressiveThresholds={aggressiveThresholds} />
+        {backtest.lower.aggressive && <PutBacktestEvidence label="激進" grade="aggressive" result={backtest.lower.aggressive} aggressiveThresholds={aggressiveThresholds} />}
       </div>
 
       <details className="mt-3 text-xs">
@@ -228,7 +237,7 @@ export function BacktestSummary({ analysis }: { analysis: Pick<HorizonAnalysis, 
         </summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {callEntries.map((entry) => {
-            const status = historicalFrequencyStatus(entry.result, entry.grade)
+            const status = historicalFrequencyStatus(entry.result, entry.grade, aggressiveThresholds)
             return (
               <div key={entry.grade} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-[#EFEFEF] py-2">
                 <span className="font-semibold">Call · {entry.label}</span>

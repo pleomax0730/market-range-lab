@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyGradePause } from './analysis-report'
 import type { HorizonAnalysis, RiskSide } from './types'
+import { DEFAULT_AGGRESSIVE_THRESHOLDS } from './model'
 
 const risk: RiskSide = {
   price: 100,
@@ -19,8 +20,10 @@ const risk: RiskSide = {
 const analysis = (weeks: number): HorizonAnalysis => ({
   weeks,
   targetDate: '2026-07-24',
+  tradingSessions: weeks * 5,
   sampleSize: 500,
   effectiveSampleSize: 500,
+  aggressiveThresholds: DEFAULT_AGGRESSIVE_THRESHOLDS,
   lower: [risk],
   upper: [risk],
   downsideDistribution: [],

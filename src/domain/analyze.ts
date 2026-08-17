@@ -1,6 +1,7 @@
 import { differenceInCalendarDays, getDay, parseISO } from 'date-fns'
-import { isFinalRegularSessionOfWeek, targetWeekClose } from './market-calendar'
-import { GRADE_THRESHOLDS } from './model'
+import { defaultExpiryHorizons, isWeeklyExpirySupported, resolveExpiryHorizon, type ExpiryHorizon } from './expiry-horizon'
+import { advanceRegularSessions, targetWeekClose } from './market-calendar'
+import { DEFAULT_AGGRESSIVE_THRESHOLDS, GRADE_THRESHOLDS } from './model'
 import {
   observePriceRecovery,
   summarizeRecoveryObservations,
@@ -19,6 +20,7 @@ import type {
   HorizonBacktest,
   ModelBoundaryEstimate,
   PriceBar,
+  RiskThresholds,
   VolatilityAdjustment,
 } from './types'
 
@@ -28,6 +30,8 @@ export type AnalysisInput = {
   anchorDate: string
   intraday: boolean
   interval?: 'daily' | 'weekly'
+  targetDates?: string[]
+  aggressiveThresholds?: RiskThresholds
 }
 
 type VolatilityProfile = Array<number | undefined>
@@ -36,6 +40,14 @@ type ModeledPathSet = {
   lower: HistoricalPath[]
   upper: HistoricalPath[]
   volatility: VolatilityAdjustment
+}
+
+function targetDateForWeeks(anchorDate: string, weeks: number, intraday: boolean) {
+  return targetWeekClose(
+    anchorDate,
+    weeks,
+    !intraday && targetWeekClose(anchorDate, 1) <= anchorDate,
+  )
 }
 
 const DAILY_VOLATILITY_WINDOW = 20
@@ -80,13 +92,13 @@ function referenceVolatility(
 
 function extractWeeklyMatchedPaths(
   bars: PriceBar[],
-  weeks: number,
+  horizon: ExpiryHorizon,
   intraday: boolean,
   volatilityProfile: VolatilityProfile,
 ): HistoricalPath[] {
   const paths: HistoricalPath[] = []
   bars.forEach((start, startIndex) => {
-    const targetIndex = startIndex + weeks - (intraday ? 1 : 0)
+    const targetIndex = startIndex + horizon.weeks - (intraday ? 1 : 0)
     const target = bars[targetIndex]
     if (!target) return
     const sequence = bars.slice(startIndex, targetIndex + 1)
@@ -115,23 +127,22 @@ function extractWeeklyMatchedPaths(
 function extractMatchedPathsWithProfile(
   bars: PriceBar[],
   anchorDate: string,
-  weeks: number,
+  horizon: ExpiryHorizon,
   intraday: boolean,
   interval: 'daily' | 'weekly',
   volatilityProfile: VolatilityProfile,
 ): HistoricalPath[] {
-  if (interval === 'weekly') return extractWeeklyMatchedPaths(bars, weeks, intraday, volatilityProfile)
+  if (interval === 'weekly') return extractWeeklyMatchedPaths(bars, horizon, intraday, volatilityProfile)
   const anchorWeekday = getDay(parseISO(anchorDate))
-  const rollsPastCurrentWeek = !intraday && isFinalRegularSessionOfWeek(anchorDate)
   const indexByDate = new Map(bars.map((bar, index) => [bar.date, index]))
   const paths: HistoricalPath[] = []
   bars.forEach((start, startIndex) => {
     if (getDay(parseISO(start.date)) !== anchorWeekday) return
-    const targetDate = targetWeekClose(start.date, weeks, rollsPastCurrentWeek)
+    const targetDate = advanceRegularSessions(start.date, horizon.tradingSessions)
     const targetIndex = indexByDate.get(targetDate)
     if (targetIndex === undefined) return
     const target = bars[targetIndex]
-    if (targetIndex < startIndex || differenceInCalendarDays(parseISO(target.date), parseISO(start.date)) > weeks * 7 + 4) return
+    if (targetIndex < startIndex) return
     const base = intraday ? start.open : start.close
     const windowStart = intraday ? startIndex : startIndex + 1
     const window = bars.slice(windowStart, targetIndex + 1)
@@ -153,14 +164,20 @@ function extractMatchedPathsWithProfile(
 export function extractMatchedPaths(
   bars: PriceBar[],
   anchorDate: string,
-  weeks: number,
+  target: number | string,
   intraday: boolean,
   interval: 'daily' | 'weekly' = 'daily',
 ): HistoricalPath[] {
+  const targetDate = typeof target === 'number'
+    ? targetDateForWeeks(anchorDate, target, intraday)
+    : target
+  const horizon = resolveExpiryHorizon(anchorDate, targetDate)
+  if (!horizon) return []
+  if (interval === 'weekly' && !isWeeklyExpirySupported(anchorDate, targetDate, intraday)) return []
   return extractMatchedPathsWithProfile(
     bars,
     anchorDate,
-    weeks,
+    horizon,
     intraday,
     interval,
     buildVolatilityProfile(bars, interval),
@@ -236,14 +253,22 @@ function buildAdversePathSets(
 
 function modeledPathsWithProfile(
   input: AnalysisInput,
-  weeks: number,
+  target: number | string,
   profile: VolatilityProfile,
 ): ModeledPathSet {
   const interval = input.interval ?? 'daily'
+  const targetDate = typeof target === 'number'
+    ? targetDateForWeeks(input.anchorDate, target, input.intraday)
+    : target
+  const horizon = resolveExpiryHorizon(input.anchorDate, targetDate)
+  if (!horizon) throw new Error(`到期日 ${targetDate} 不是有效的未來正常交易日。`)
+  if (interval === 'weekly' && !isWeeklyExpirySupported(input.anchorDate, targetDate, input.intraday)) {
+    throw new Error('Weekly CSV 只能分析每週最後正常交易日；星期三等週中到期日需要 Daily CSV。')
+  }
   const raw = extractMatchedPathsWithProfile(
     input.bars,
     input.anchorDate,
-    weeks,
+    horizon,
     input.intraday,
     interval,
     profile,
@@ -255,9 +280,9 @@ function modeledPathsWithProfile(
   )
 }
 
-export function extractModeledPaths(input: AnalysisInput, weeks: number): ModeledPathSet {
+export function extractModeledPaths(input: AnalysisInput, target: number | string): ModeledPathSet {
   const interval = input.interval ?? 'daily'
-  return modeledPathsWithProfile(input, weeks, buildVolatilityProfile(input.bars, interval))
+  return modeledPathsWithProfile(input, target, buildVolatilityProfile(input.bars, interval))
 }
 
 export function estimateEffectiveSampleSize(paths: HistoricalPath[], weeks: number) {
@@ -485,7 +510,12 @@ function sortedQuantile(values: Float64Array, probability: number) {
   return upper === undefined ? values[lower] : values[lower] + fraction * (upper - values[lower])
 }
 
-function backtestBoundaries(rawPaths: HistoricalPath[], trainingLength: number, targetVolatility: number | undefined) {
+function backtestBoundaries(
+  rawPaths: HistoricalPath[],
+  trainingLength: number,
+  targetVolatility: number | undefined,
+  aggressiveThresholds: RiskThresholds,
+) {
   const lowerCloses = new Float64Array(trainingLength)
   const lowerLows = new Float64Array(trainingLength)
   const upperCloses = new Float64Array(trainingLength)
@@ -506,8 +536,8 @@ function backtestBoundaries(rawPaths: HistoricalPath[], trainingLength: number, 
   lowerLows.sort()
   upperCloses.sort()
   upperHighs.sort()
-  const boundary = (side: 'lower' | 'upper', grade: 'conservative' | 'safe') => {
-    const limits = GRADE_THRESHOLDS[grade]
+  const boundary = (side: 'lower' | 'upper', grade: 'conservative' | 'safe' | 'aggressive') => {
+    const limits = grade === 'aggressive' ? aggressiveThresholds : GRADE_THRESHOLDS[grade]
     return side === 'lower'
       ? Math.min(
           sortedQuantile(lowerCloses, limits.expirationUpper95),
@@ -522,10 +552,12 @@ function backtestBoundaries(rawPaths: HistoricalPath[], trainingLength: number, 
     lower: {
       conservative: boundary('lower', 'conservative'),
       safe: boundary('lower', 'safe'),
+      aggressive: boundary('lower', 'aggressive'),
     },
     upper: {
       conservative: boundary('upper', 'conservative'),
       safe: boundary('upper', 'safe'),
+      aggressive: boundary('upper', 'aggressive'),
     },
   }
 }
@@ -571,6 +603,7 @@ export function backtestHistoricalPaths(
   weeks: number,
   interval: 'daily' | 'weekly',
   bars?: PriceBar[],
+  aggressiveThresholds: RiskThresholds = DEFAULT_AGGRESSIVE_THRESHOLDS,
 ): HorizonBacktest | undefined {
   if (weeks > 4 || rawPaths.length <= MINIMUM_BACKTEST_TRAINING_PATHS) return undefined
   const recoveryEnabled = Boolean(
@@ -582,8 +615,13 @@ export function backtestHistoricalPaths(
     lower: {
       conservative: createBacktestResult(recoveryEnabled),
       safe: createBacktestResult(recoveryEnabled),
+      aggressive: createBacktestResult(recoveryEnabled),
     },
-    upper: { conservative: createBacktestResult(), safe: createBacktestResult() },
+    upper: {
+      conservative: createBacktestResult(),
+      safe: createBacktestResult(),
+      aggressive: createBacktestResult(),
+    },
   }
   const effectivePredictionSampleSize = estimateEffectiveSampleSize(
     rawPaths.slice(MINIMUM_BACKTEST_TRAINING_PATHS),
@@ -591,8 +629,8 @@ export function backtestHistoricalPaths(
   )
   for (let index = MINIMUM_BACKTEST_TRAINING_PATHS; index < rawPaths.length; index += 1) {
     const actual = rawPaths[index]
-    const boundaries = backtestBoundaries(rawPaths, index, actual.startVolatility)
-    for (const grade of ['conservative', 'safe'] as const) {
+    const boundaries = backtestBoundaries(rawPaths, index, actual.startVolatility, aggressiveThresholds)
+    for (const grade of ['conservative', 'safe', 'aggressive'] as const) {
       updateBacktestResult(result.lower[grade], actual, 'lower', boundaries.lower[grade], interval, bars)
       updateBacktestResult(result.upper[grade], actual, 'upper', boundaries.upper[grade], interval)
     }
@@ -607,10 +645,12 @@ export function backtestHistoricalPaths(
     lower: {
       conservative: finalizeBacktestResult(result.lower.conservative, interval, effectivePredictionSampleSize),
       safe: finalizeBacktestResult(result.lower.safe, interval, effectivePredictionSampleSize),
+      aggressive: finalizeBacktestResult(result.lower.aggressive, interval, effectivePredictionSampleSize),
     },
     upper: {
       conservative: finalizeBacktestResult(result.upper.conservative, interval, effectivePredictionSampleSize),
       safe: finalizeBacktestResult(result.upper.safe, interval, effectivePredictionSampleSize),
+      aggressive: finalizeBacktestResult(result.upper.aggressive, interval, effectivePredictionSampleSize),
     },
   }
 }
@@ -622,8 +662,9 @@ function evaluateConservativeEstimate(
   paths: HistoricalPath[],
   effectiveSampleSize: number,
   weeks: number,
+  aggressiveThresholds: RiskThresholds,
 ) {
-  const result = evaluateCandidate(anchorPrice, estimate.price, side, paths, effectiveSampleSize, weeks)
+  const result = evaluateCandidate(anchorPrice, estimate.price, side, paths, effectiveSampleSize, weeks, aggressiveThresholds)
   const threshold = GRADE_THRESHOLDS.conservative
   const certified = weeks <= 4 &&
     effectiveSampleSize >= 100 &&
@@ -639,10 +680,18 @@ function evaluateConservativeEstimate(
 
 export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
   const interval = input.interval ?? 'daily'
+  const aggressiveThresholds = input.aggressiveThresholds ?? DEFAULT_AGGRESSIVE_THRESHOLDS
   const profile = buildVolatilityProfile(input.bars, interval)
-  return Array.from({ length: 8 }, (_, index) => {
-    const weeks = index + 1
-    const modeled = modeledPathsWithProfile(input, weeks, profile)
+  const horizons = input.targetDates?.length
+    ? [...new Set(input.targetDates)].map((targetDate) => {
+        const horizon = resolveExpiryHorizon(input.anchorDate, targetDate)
+        if (!horizon) throw new Error(`到期日 ${targetDate} 不是有效的未來正常交易日。`)
+        return horizon
+      })
+    : defaultExpiryHorizons(input.anchorDate, input.intraday)
+  return horizons.map((horizon) => {
+    const { weeks, targetDate, tradingSessions } = horizon
+    const modeled = modeledPathsWithProfile(input, targetDate, profile)
     const effectiveSampleSize = estimateEffectiveSampleSize(modeled.raw, weeks)
     const rawCloses = modeled.raw.map((path) => path.closeReturn)
     const rawLows = modeled.raw.map((path) => path.lowReturn)
@@ -665,23 +714,27 @@ export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
     const modeledBootstrap = bootstrapRangeIntervals(lowerCloses, upperCloses, lowerLows, upperHighs)
     const lowerEstimate = conservativeEstimate(input.anchorPrice, 'lower', modeledBootstrap, lowerEvt.stressPct)
     const upperEstimate = conservativeEstimate(input.anchorPrice, 'upper', modeledBootstrap, upperEvt.stressPct)
-    const rawLowerConservative = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'conservative')
-    const rawUpperConservative = candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'conservative')
-    const lowerConservative = evaluateConservativeEstimate(lowerEstimate, input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks)
-    const upperConservative = evaluateConservativeEstimate(upperEstimate, input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks)
-    const lowerSafe = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'safe')
+    const rawLowerConservative = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'conservative', aggressiveThresholds)
+    const rawUpperConservative = candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'conservative', aggressiveThresholds)
+    const lowerConservative = evaluateConservativeEstimate(lowerEstimate, input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, aggressiveThresholds)
+    const upperConservative = evaluateConservativeEstimate(upperEstimate, input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, aggressiveThresholds)
+    const lowerSafe = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'safe', aggressiveThresholds)
+    const lowerAggressive = candidateForThreshold(input.anchorPrice, 'lower', modeled.lower, effectiveSampleSize, weeks, 'aggressive', aggressiveThresholds)
     const distributionMaximum = lowerSafe.meetsTarget === false
       ? quantile(lowerLows, 0.05)
       : lowerSafe.returnPct
     return {
       weeks,
-      targetDate: targetWeekClose(input.anchorDate, weeks, !input.intraday && isFinalRegularSessionOfWeek(input.anchorDate)),
+      targetDate,
+      tradingSessions,
+      aggressiveThresholds,
       sampleSize: modeled.raw.length,
       effectiveSampleSize,
-      lower: [lowerConservative, lowerSafe],
+      lower: [lowerConservative, lowerSafe, lowerAggressive],
       upper: [
         upperConservative,
-        candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'safe'),
+        candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'safe', aggressiveThresholds),
+        candidateForThreshold(input.anchorPrice, 'upper', modeled.upper, effectiveSampleSize, weeks, 'aggressive', aggressiveThresholds),
       ],
       downsideDistribution: buildDownsideDistribution(modeled.lower, distributionMaximum, 180, lowerEstimate.returnPct),
       conservativeEstimate: { lower: lowerEstimate, upper: upperEstimate },
@@ -690,7 +743,7 @@ export function analyzeHistory(input: AnalysisInput): HorizonAnalysis[] {
         upper: rawUpperConservative,
       },
       volatilityAdjustment: modeled.volatility,
-      backtest: backtestHistoricalPaths(modeled.raw, weeks, interval, input.bars),
+      backtest: backtestHistoricalPaths(modeled.raw, weeks, interval, input.bars, aggressiveThresholds),
       empirical: {
         closeLowPct: quantile(rawCloses, 0.005),
         closeHighPct: quantile(rawCloses, 0.995),

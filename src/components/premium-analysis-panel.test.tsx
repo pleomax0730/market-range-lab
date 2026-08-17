@@ -7,7 +7,9 @@ import { PremiumAnalysisPanel } from './premium-analysis-panel'
 import { TooltipProvider } from './ui/tooltip'
 
 const candidate: CandidateAnalysis = {
+  targetDate: '2026-07-24',
   weeks: 1,
+  tradingSessions: 4,
   price: 67,
   side: 'lower',
   sampleSize: 850,

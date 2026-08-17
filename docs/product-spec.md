@@ -40,17 +40,19 @@ The local server queries Yahoo every 30 seconds during the regular session and n
 
 An open-session quote older than two minutes is stale: automatic grading pauses until a fresh quote arrives or the user enters a Manual Reference Price. Quote source, session, timestamp, ET time, Taiwan time, and override status are always visible.
 
-## Calendar And Horizons
+## Calendar And Expiries
 
-The application uses the US equity calendar and groups daily observations into Trading Weeks. A Target Week Close is normally Friday's regular close and becomes the preceding final session when Friday is closed.
+The application uses the US equity calendar. The selected expiry date is the analysis identity; a derived count of remaining regular trading sessions is the statistical horizon. This prevents two expiries in the same calendar week, such as Wednesday and Friday, from sharing or overwriting a result.
 
-All next one through eight Target Week Closes are calculated together. One through four weeks are Decision-Grade Horizons. Five through eight weeks are Scenario Horizons and always show a low-evidence warning without a Safety Grade.
+The user selects an actual broker-listed expiry within the next eight weeks. The interface offers the next eight weekly final-session dates as shortcuts, but does not infer or validate an option chain. Daily history supports any regular-session expiry in that range. Weekly-Only History supports only each week's final regular session because a weekly bar cannot resolve a midweek close.
 
-Daily historical paths must start at the same weekday position as the current analysis and end at the corresponding Target Week Close. Weekly-Only History instead uses contiguous weekly bars: closed-session analysis starts from one weekly close and measures the next N weekly closes and intervening High/Low values. Missing weeks are not bridged. Weekly-only results are visibly labeled and cannot claim daily path order.
+Daily historical paths start at the same weekday position as the current analysis and advance by the same number of regular trading sessions as the selected expiry. Weekly-Only History instead uses contiguous weekly bars. Missing weeks are not bridged. A derived one-through-four-week span may receive a Safety Grade; spans beyond four weeks are Scenario-only.
 
 ## Intraday Behavior
 
 During an open session, the current regular-session quote is the Reference Price and the unfinished day is conservatively modeled as one complete session. Historical Open-to-High, Open-to-Low, and Open-to-Close returns are applied from the current quote so today's already-realized overnight gap is not counted twice. The result is labeled `Intraday Conservative Preview`.
+
+For Daily history with three or fewer regular sessions remaining, the range remains visible as a preview but grading pauses: daily OHLC does not contain same-clock-time historical snapshots needed to certify a short-dated intraday comparison. A completed-session reference may be graded normally.
 
 Weekly-Only History cannot reconstruct a remaining daily session. During an open session it may show a visibly labeled weekly scenario preview, but Safety Grades are paused until a completed-session reference is available.
 
@@ -64,7 +66,7 @@ Primary ranges and breach rates use the more adverse of each equal-weight full-h
 
 Contiguous-block bootstrap provides two-sided 95% confidence intervals while preserving serial dependence. Directional grade decisions instead use a one-sided 95% upper risk bound: the maximum of the one-sided block-bootstrap upper quantile and a one-sided Wilson upper bound using the effective sample size. EVT is aligned to the 0.5% expiration and 1% path tails and may provide a separate stress estimate only when fit diagnostics pass; it cannot independently certify a Safety Grade. Normal-distribution assumptions are not used.
 
-For every horizon and Candidate Price, calculate separately:
+For every selected expiry and Candidate Price, calculate separately:
 
 - downside expiration closing-breach probability
 - downside intraperiod low-touch probability
@@ -100,11 +102,12 @@ Grades use directional one-sided 95% upper risk bounds, not point estimates or t
 | --- | --- | ---: | ---: |
 | Conservative | `符合保守門檻` | <= 0.5% | <= 1% |
 | Safe | `符合安全門檻` | <= 2% | <= 5% |
+| Aggressive | `符合激進門檻` | <= 5% by default, user-adjustable | <= 10% by default, user-adjustable |
 | Dangerous | `超出安全門檻` | either Safe limit exceeded | either Safe limit exceeded |
 
 The UI describes grades as threshold classifications. It never displays `Dangerous` as a prediction that a boundary will certainly be touched, and grade tooltips explicitly distinguish threshold failure from certainty.
 
-Fewer than 100 effective independent paths produces `Insufficient Evidence`, not a grade. Scenario Horizons are also ungraded. Advanced overrides are allowed but remain explicit in the UI and export.
+Fewer than 100 effective independent paths produces `Insufficient Evidence`, not a grade. Scenario Horizons are also ungraded. The Aggressive thresholds default to 5% expiration and 10% path touch. Users may adjust them in the collapsed threshold controls, but expiration must remain at least 2%, path touch at least 5%, and path touch cannot be lower than expiration. The effective values are recorded in the model key, JSON, and CSV export; invalid edits temporarily fall back to the defaults. Conservative and Safe thresholds never change.
 
 The UI always reports a distinctly labeled `Conservative Model Estimate` together with a separate `95% Certified Boundary`. The model estimate takes the more adverse of the volatility-adjusted 0.5% expiration quantile confidence bound, the 1% path-touch quantile confidence bound, and any diagnostics-approved EVT stress. Its badge states whether that estimated price itself passes certification; the separate certified boundary shows the most aggressive continuous price that finite evidence can certify.
 
@@ -124,12 +127,12 @@ Downside Put candidates additionally show historical premium compensation floors
 2. Import a Daily CSV when available, or a Weekly CSV for lower-resolution analysis; optionally compare matching daily and weekly histories.
 3. Review data provenance, quality errors, adjustment warnings, and freshness.
 4. Enter an optional Candidate Price and choose Put or Call.
-5. Review the one-to-eight-week summary table.
-6. Select a horizon for detailed distribution, range, touch, close, confidence, and stress views.
+5. Select an actual expiry date, using a weekly shortcut or the date input.
+6. Review the expiry-specific distribution, range, touch, close, confidence, and stress views.
 7. For a downside Put candidate, review the four premium compensation floors.
 8. Optionally pause quote refresh, override the Reference Price, or export the result.
 
-The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected horizon's Target Week Close. Changing a Candidate Price never silently changes that evaluation context.
+The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected expiry close and remaining regular-session count. Changing a Candidate Price never silently changes that evaluation context.
 
 Analysis recomputes automatically after a fresh 30-second quote or a debounced input change. There is no primary `Run Analysis` button. Candidate recalculation keeps the previous result footprint in place with an explicit updating state so downstream content does not jump.
 

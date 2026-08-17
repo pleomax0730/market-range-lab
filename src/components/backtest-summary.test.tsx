@@ -58,6 +58,13 @@ const backtest: HorizonBacktest = {
         })),
       },
     },
+    aggressive: {
+      predictions: 273,
+      expirationBreaches: 5,
+      expirationRate: 5 / 273,
+      pathTouchBreaches: 8,
+      pathTouchRate: 8 / 273,
+    },
   },
   upper: {
     conservative: {
@@ -73,6 +80,13 @@ const backtest: HorizonBacktest = {
       expirationRate: 4 / 273,
       pathTouchBreaches: 5,
       pathTouchRate: 5 / 273,
+    },
+    aggressive: {
+      predictions: 273,
+      expirationBreaches: 6,
+      expirationRate: 6 / 273,
+      pathTouchBreaches: 9,
+      pathTouchRate: 9 / 273,
     },
   },
 }
@@ -94,12 +108,12 @@ describe('BacktestSummary', () => {
       element?.textContent === '低證據 · 原始 2 次 · 有效約 2.0 次',
     )).toHaveLength(2)
     expect(screen.getByText('截至資料末尚未回復')).toBeInTheDocument()
-    expect(screen.getAllByText('回測頻率達標')).toHaveLength(4)
+    expect(screen.getAllByText('回測頻率達標')).toHaveLength(6)
   })
 
   it.each([
     { expirationRate: 0.006, pathTouchRate: 0.005, label: '到期率超標' },
-    { expirationRate: 0.004, pathTouchRate: 0.011, label: '週內觸及率超標' },
+    { expirationRate: 0.004, pathTouchRate: 0.011, label: '期間觸及率超標' },
     { expirationRate: 0.006, pathTouchRate: 0.011, label: '兩項皆超標' },
   ])('states which conservative Put frequency exceeded its target: $label', ({ expirationRate, pathTouchRate, label }) => {
     const result: HorizonBacktest = {

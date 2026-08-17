@@ -31,6 +31,16 @@ const safe: RiskSide = {
   basis: 'certified',
 }
 
+const aggressive: RiskSide = {
+  ...safe,
+  price: 61.2,
+  returnPct: -0.12,
+  expirationBreach: 0.03,
+  pathTouch: 0.07,
+  grade: 'aggressive',
+  requestedGrade: 'aggressive',
+}
+
 afterEach(cleanup)
 
 describe('PutDecisionSummary', () => {
@@ -38,7 +48,7 @@ describe('PutDecisionSummary', () => {
     render(
       <TooltipProvider>
         <PutDecisionSummary
-          analysis={{ weeks: 1, targetDate: '2026-07-31', lower: [conservative, safe] }}
+          analysis={{ tradingSessions: 4, targetDate: '2026-07-31', lower: [conservative, safe, aggressive] }}
           stale={false}
         />
       </TooltipProvider>,
@@ -47,6 +57,7 @@ describe('PutDecisionSummary', () => {
     expect(screen.getByText('Put 決策價格')).toBeInTheDocument()
     expect(screen.getByText('$48.42')).toBeInTheDocument()
     expect(screen.getByText('$55.15')).toBeInTheDocument()
+    expect(screen.getByText('$61.20')).toBeInTheDocument()
     expect(screen.getByText('保守模型 · 未認證')).toBeInTheDocument()
     expect(screen.getByText('符合安全門檻')).toBeInTheDocument()
     expect(screen.getByText('0.91%')).toBeInTheDocument()
@@ -57,13 +68,13 @@ describe('PutDecisionSummary', () => {
     render(
       <TooltipProvider>
         <PutDecisionSummary
-          analysis={{ weeks: 4, targetDate: '2026-08-21', lower: [conservative, safe] }}
+          analysis={{ tradingSessions: 20, targetDate: '2026-08-21', lower: [conservative, safe, aggressive] }}
           stale
         />
       </TooltipProvider>,
     )
 
-    expect(screen.getAllByText('分級暫停')).toHaveLength(2)
+    expect(screen.getAllByText('分級暫停')).toHaveLength(3)
     expect(screen.getByText('$48.42')).toBeInTheDocument()
   })
 })

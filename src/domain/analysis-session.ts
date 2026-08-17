@@ -3,6 +3,8 @@ import {
   type ReportQuote,
   type StatisticalReportInput,
 } from './analysis-report'
+import { isWeeklyExpirySupported, resolveExpiryHorizon } from './expiry-horizon'
+import { resolveAggressiveThresholds } from './model'
 import { previousRegularSession } from './market-calendar'
 import {
   DEFAULT_PREMIUM_ASSUMPTIONS,
@@ -14,6 +16,9 @@ export type GradePauseReason =
   | 'stale-history'
   | 'stale-or-missing-quote'
   | 'weekly-intraday-resolution'
+  | 'invalid-expiry'
+  | 'weekly-expiry-resolution'
+  | 'short-dated-intraday-resolution'
 
 export type AnalysisSessionReference = {
   price: number
@@ -29,7 +34,9 @@ export type AnalysisSessionReference = {
 }
 
 export type AnalysisSessionKnobs = {
-  horizon: number
+  expiryDate: string
+  aggressiveExpirationRiskPct?: string
+  aggressiveTouchRiskPct?: string
   candidate: string
   candidateSide: 'lower' | 'upper'
   netPremiumPerShare?: string
@@ -39,6 +46,8 @@ export type AnalysisSessionKnobs = {
 export type AnalysisSessionPlan = {
   historyStale: boolean
   weeklyIntraday: boolean
+  expiryUnsupported: boolean
+  shortDatedIntraday: boolean
   gradePaused: boolean
   pauseReasons: GradePauseReason[]
   reportInput?: StatisticalReportInput
@@ -101,6 +110,8 @@ export function buildAnalysisSession(
     return {
       historyStale: false,
       weeklyIntraday: false,
+      expiryUnsupported: false,
+      shortDatedIntraday: false,
       gradePaused: false,
       pauseReasons: [],
     }
@@ -108,26 +119,63 @@ export function buildAnalysisSession(
 
   const historyStale = isHistoryStale(dataset, reference.anchorDate)
   const weeklyIntraday = dataset.interval === 'weekly' && reference.intraday
-  const gradePaused = reference.stale || historyStale || weeklyIntraday
+  const horizon = resolveExpiryHorizon(reference.anchorDate, knobs.expiryDate)
+  const aggressive = resolveAggressiveThresholds(
+    knobs.aggressiveExpirationRiskPct,
+    knobs.aggressiveTouchRiskPct,
+  )
+  const invalidExpiry = !horizon || horizon.weeks > 8 || (horizon.tradingSessions === 0 && !reference.intraday)
+  const weeklyExpiryUnsupported = Boolean(
+    horizon &&
+    dataset.interval === 'weekly' &&
+    !isWeeklyExpirySupported(reference.anchorDate, knobs.expiryDate, reference.intraday),
+  )
+  const expiryUnsupported = invalidExpiry || weeklyExpiryUnsupported
+  const shortDatedIntraday = Boolean(
+    horizon &&
+    dataset.interval === 'daily' &&
+    reference.intraday &&
+    horizon.tradingSessions <= 3,
+  )
+  const gradePaused = reference.stale || historyStale || weeklyIntraday || expiryUnsupported || shortDatedIntraday
   const pauseReasons: GradePauseReason[] = [
     ...(historyStale ? (['stale-history'] as const) : []),
     ...(reference.stale ? (['stale-or-missing-quote'] as const) : []),
     ...(weeklyIntraday ? (['weekly-intraday-resolution'] as const) : []),
+    ...(invalidExpiry ? (['invalid-expiry'] as const) : []),
+    ...(weeklyExpiryUnsupported ? (['weekly-expiry-resolution'] as const) : []),
+    ...(shortDatedIntraday ? (['short-dated-intraday-resolution'] as const) : []),
   ]
-  const context: AnalysisReportContext = {
+  const context: AnalysisReportContext | undefined = horizon ? {
     dataset,
     reference: toReportReference(reference),
     pauseReasons,
-    selectedWeeks: knobs.horizon,
+    selectedExpiryDate: horizon.targetDate,
+    selectedTradingSessions: horizon.tradingSessions,
+    aggressiveThresholds: aggressive.thresholds,
     premiumAssumptions: resolvePremiumAssumptions(
       knobs.annualCapitalReturnRatePct,
     ),
-  }
+  } : undefined
 
   if (!(reference.price > 0)) {
     return {
       historyStale,
       weeklyIntraday,
+      expiryUnsupported,
+      shortDatedIntraday,
+      gradePaused,
+      pauseReasons,
+      context,
+    }
+  }
+
+  if (!horizon || expiryUnsupported) {
+    return {
+      historyStale,
+      weeklyIntraday,
+      expiryUnsupported,
+      shortDatedIntraday,
       gradePaused,
       pauseReasons,
       context,
@@ -149,10 +197,12 @@ export function buildAnalysisSession(
       anchorDate: reference.anchorDate,
       intraday: reference.intraday,
       interval: dataset.interval,
+      targetDates: [horizon.targetDate],
+      aggressiveThresholds: aggressive.thresholds,
     },
     candidate: candidatePrice > 0
       ? {
-          weeks: knobs.horizon,
+          targetDate: horizon.targetDate,
           price: candidatePrice,
           side: knobs.candidateSide,
           ...(validNetPremium ? { netPremiumPerShare } : {}),
@@ -166,11 +216,16 @@ export function buildAnalysisSession(
     reference.anchorDate,
     reference.intraday,
     dataset.interval,
+    horizon.targetDate,
+    aggressive.thresholds.expirationUpper95,
+    aggressive.thresholds.pathTouchUpper95,
   ].join('|')
 
   return {
     historyStale,
     weeklyIntraday,
+    expiryUnsupported,
+    shortDatedIntraday,
     gradePaused,
     pauseReasons,
     reportInput,

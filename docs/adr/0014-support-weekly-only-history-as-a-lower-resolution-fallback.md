@@ -5,3 +5,5 @@ The application accepts an uploaded weekly OHLC dataset as the active calculatio
 Weekly-only results must be labeled with their data resolution in the UI and exports. They may report the same empirical estimates, confidence bounds, and evidence-based grades as daily analysis, but must not claim daily path order or session-level precision. When matching Daily and Weekly histories both exist, weekly reconciliation remains available; selecting one dataset never silently combines the two. Yahoo quotes remain reference prices only and never backfill either history source.
 
 Because weekly OHLC cannot reconstruct an unfinished daily session, weekly-only analysis during market hours is an ungraded scenario preview. Evidence-based grades resume only with a completed-session reference.
+
+Weekly-only history also cannot resolve a midweek expiry. It accepts only the final regular session of a trading week; other expiry dates require Daily History.
