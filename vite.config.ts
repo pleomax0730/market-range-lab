@@ -10,7 +10,7 @@ export default defineConfig({
     {
       name: "local-quote-api",
       configureServer(server) {
-        server.middlewares.use("/api/quote", handleQuoteRequest);
+        server.middlewares.use(handleQuoteRequest);
       },
     },
   ],

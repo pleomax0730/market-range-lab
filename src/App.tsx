@@ -49,6 +49,7 @@ import {
   saveDashboardSettings,
 } from "./data/datasets";
 import { Button } from "./components/ui/button";
+import { AnimatedNumber } from "./components/ui/animated-number";
 import { Input } from "./components/ui/input";
 import { Tooltip } from "./components/ui/tooltip";
 import { downloadText } from "./lib/export";
@@ -107,6 +108,9 @@ export function App() {
     dashboardDefaults.candidateSide,
   );
   const [netPremiumPerShare, setNetPremiumPerShare] = useState("");
+  const [recoveryFrontierSettings, setRecoveryFrontierSettings] = useState(
+    dashboardDefaults.recoveryFrontierSettings,
+  );
   const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
     dashboardDefaults.annualCapitalReturnRatePct,
   );
@@ -141,6 +145,7 @@ export function App() {
         setAggressiveExpirationRiskPct(normalized.aggressiveExpirationRiskPct);
         setAggressiveTouchRiskPct(normalized.aggressiveTouchRiskPct);
         setAnnualCapitalReturnRatePct(normalized.annualCapitalReturnRatePct);
+        setRecoveryFrontierSettings(normalized.recoveryFrontierSettings);
       }
       setSettingsLoaded(true);
     })();
@@ -185,6 +190,7 @@ export function App() {
           aggressiveExpirationRiskPct,
           aggressiveTouchRiskPct,
           annualCapitalReturnRatePct,
+          recoveryFrontierSettings,
         }),
       300,
     );
@@ -196,6 +202,7 @@ export function App() {
     aggressiveExpirationRiskPct,
     aggressiveTouchRiskPct,
     selectedExpiryDate,
+    recoveryFrontierSettings,
     settingsLoaded,
   ]);
 
@@ -207,6 +214,7 @@ export function App() {
       candidate,
       candidateSide,
       netPremiumPerShare,
+      recoveryFrontierSettings,
       annualCapitalReturnRatePct,
     }),
     [
@@ -216,6 +224,7 @@ export function App() {
       candidate,
       candidateSide,
       netPremiumPerShare,
+      recoveryFrontierSettings,
       selectedExpiryDate,
     ],
   );
@@ -250,12 +259,22 @@ export function App() {
       candidateResult.side === candidateSide &&
       candidateResult.price === Number(candidate),
   );
-  const candidateResultPending = Boolean(candidateResultStale || (candidateResult && analysisLoading));
-
   function exportResults(kind: "json" | "csv") {
     if (!report) return;
     const serialized = serializeAnalysisReport(report, kind);
     downloadText(serialized.filename, serialized.text, serialized.mimeType);
+  }
+
+  function updateNetPremiumPerShare(value: string) {
+    const parsed = Number(value);
+    const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && parsed < Number(candidate);
+    const previouslyEmpty = netPremiumPerShare.trim() === "";
+    setNetPremiumPerShare(value);
+    setRecoveryFrontierSettings((current) => {
+      if (!valid && current.target === "break-even") return { ...current, target: "strike" };
+      if (valid && previouslyEmpty && current.target === "strike") return { ...current, target: "break-even" };
+      return current;
+    });
   }
 
   return (
@@ -360,7 +379,7 @@ export function App() {
                 className="mt-3 border-t border-[#E5E5E5] pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  setNetPremiumPerShare("");
+                  updateNetPremiumPerShare("");
                   void confirmImport(pendingImport.symbol);
                 }}
               >
@@ -421,7 +440,7 @@ export function App() {
                   size="icon"
                   aria-label="清除全部"
                   onClick={() => {
-                    setNetPremiumPerShare("");
+                    updateNetPremiumPerShare("");
                     void historyCatalog.clear();
                   }}
                 >
@@ -442,7 +461,7 @@ export function App() {
                     className="min-w-0 flex-1 rounded text-left outline-none transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-600"
                     onClick={() => {
                       setMobileDataToolsOpen(false);
-                      setNetPremiumPerShare("");
+                      updateNetPremiumPerShare("");
                       void historyCatalog.activate(dataset.id);
                     }}
                   >
@@ -461,7 +480,7 @@ export function App() {
                     size="icon"
                     aria-label="刪除資料集"
                     onClick={() => {
-                      if (dataset.id === activeId) setNetPremiumPerShare("");
+                      if (dataset.id === activeId) updateNetPremiumPerShare("");
                       void historyCatalog.remove(dataset.id);
                     }}
                   >
@@ -495,17 +514,15 @@ export function App() {
                     <span>Active Symbol</span>
                     <TermHelp
                       explanation={active.interval === "daily"
-                        ? "目前 Yahoo 報價與分析都綁定這個 Daily 資料集的 Symbol。"
-                        : "目前 Yahoo 報價與分析都綁定這個 Weekly 資料集的 Symbol；結果是較低解析度的週線估計。"}
+                        ? "目前自動報價與分析都綁定這個 Daily 資料集的 Symbol。"
+                        : "目前自動報價與分析都綁定這個 Weekly 資料集的 Symbol；結果是較低解析度的週線估計。"}
                     >
                       {active.interval === "daily" ? "Daily" : "Weekly-only"}
                     </TermHelp>
                   </div>
                   <div className="flex flex-wrap items-baseline gap-3">
                     <h2 className="text-2xl font-bold">{active.symbol}</h2>
-                    <span className="num text-3xl font-bold">
-                      {money.format(anchorPrice)}
-                    </span>
+                    <AnimatedNumber as="span" className="text-3xl font-bold" value={money.format(anchorPrice)} />
                     <span
                       className={`text-xs font-semibold ${!manualOverride && quote?.marketOpen ? "text-green-700" : "text-[#6B7280]"}`}
                     >
@@ -543,7 +560,7 @@ export function App() {
                   </div>
                   {quoteError && !manualOverride && (
                     <p className="mt-2 text-xs text-red-700">
-                      Yahoo 報價失敗：{quoteError}。
+                      自動報價失敗：{quoteError}。
                     </p>
                   )}
                   {reference.stale && (
@@ -577,7 +594,7 @@ export function App() {
                       }
                     />
                   </label>
-                  <Tooltip content="從 Yahoo Finance 重新擷取常規交易時段報價">
+                  <Tooltip content="更新常規盤報價">
                     <Button
                       variant="outline"
                       size="icon"
@@ -775,6 +792,11 @@ export function App() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-sm font-bold">自訂價格評估</h2>
+                      {analysisLoading && (
+                        <span className="flex items-center gap-1 text-xs text-[#6B7280]">
+                          <RefreshCw size={12} className="animate-spin-fast" />更新中
+                        </span>
+                      )}
                       <Tooltip content="候選價不做履約價間距取整；參考日、盤中／收盤狀態、到期日與剩餘交易日沿用目前分析。">
                         <Info size={14} className="text-[#6B7280]" />
                       </Tooltip>
@@ -801,7 +823,7 @@ export function App() {
                     value={candidate}
                     onChange={(event) => {
                       setCandidate(event.target.value);
-                      setNetPremiumPerShare("");
+                      updateNetPremiumPerShare("");
                     }}
                   />
                   <select
@@ -811,32 +833,29 @@ export function App() {
                       setCandidateSide(
                         event.target.value as "lower" | "upper",
                       );
-                      setNetPremiumPerShare("");
+                      updateNetPremiumPerShare("");
                     }}
                   >
                     <option value="lower">下檔 / Put</option>
                     <option value="upper">上檔 / Call</option>
                   </select>
                 </div>
-                <div className={`relative ${Number(candidate) > 0 && analysisLoading ? "min-h-[180px]" : ""}`} aria-busy={analysisLoading}>
+                <div aria-busy={analysisLoading}>
                   {candidateResult && (
-                    <div className={candidateResultPending ? "opacity-50 transition-opacity duration-150" : undefined}>
+                    <div>
                       <CandidateResult
                         candidate={candidateResult}
                         anchorPrice={anchorPrice}
                         netPremiumPerShare={netPremiumPerShare}
-                        onNetPremiumPerShareChange={setNetPremiumPerShare}
+                        onNetPremiumPerShareChange={updateNetPremiumPerShare}
+                        recoveryFrontierSettings={recoveryFrontierSettings}
+                        onRecoveryFrontierSettingsChange={setRecoveryFrontierSettings}
                         dataLastDate={active.bars.at(-1)?.date ?? ""}
                         historyStale={historyStale}
                         intraday={analysisIntraday}
                         annualCapitalReturnRatePct={annualCapitalReturnRatePct}
                         onAnnualCapitalReturnRatePctChange={setAnnualCapitalReturnRatePct}
                       />
-                    </div>
-                  )}
-                  {Number(candidate) > 0 && analysisLoading && (
-                    <div className="absolute inset-0 flex items-start justify-center bg-white/70 pt-6 text-xs text-[#6B7280]">
-                      <span className="flex items-center gap-1"><RefreshCw size={12} className="animate-spin-fast" />候選價統計更新中</span>
                     </div>
                   )}
                 </div>
@@ -1124,6 +1143,8 @@ function CandidateResult({
   anchorPrice,
   netPremiumPerShare,
   onNetPremiumPerShareChange,
+  recoveryFrontierSettings,
+  onRecoveryFrontierSettingsChange,
   dataLastDate,
   historyStale,
   intraday,
@@ -1134,6 +1155,8 @@ function CandidateResult({
   anchorPrice: number;
   netPremiumPerShare: string;
   onNetPremiumPerShareChange: (value: string) => void;
+  recoveryFrontierSettings: import("./domain/candidate-recovery").RecoveryFrontierSettings;
+  onRecoveryFrontierSettingsChange: (settings: import("./domain/candidate-recovery").RecoveryFrontierSettings) => void;
   dataLastDate: string;
   historyStale: boolean;
   intraday: boolean;
@@ -1160,9 +1183,7 @@ function CandidateResult({
       </div>
       <div>
         <span className="field-label">相對當前價</span>
-        <strong className="num">
-          {percent.format(result.price / anchorPrice - 1)}
-        </strong>
+        <AnimatedNumber as="strong" value={percent.format(result.price / anchorPrice - 1)} />
         {optionPosition && (
           <small className="mt-1 block font-semibold text-[#92400E]">
             {optionPosition}
@@ -1171,11 +1192,10 @@ function CandidateResult({
       </div>
       <div>
         <span className="field-label"><TermHelp explanation="到期估計是所選到期日收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
-        <strong className="num">
-          {percent.format(result.expirationBreach)} / [
-          {percent.format(result.expirationLower95)},{" "}
-          {percent.format(result.expirationUpper95)}]
-        </strong>
+        <AnimatedNumber
+          as="strong"
+          value={`${percent.format(result.expirationBreach)} / [${percent.format(result.expirationLower95)}, ${percent.format(result.expirationUpper95)}]`}
+        />
         <small className="num block text-[#6B7280]">
           {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
           events
@@ -1186,11 +1206,10 @@ function CandidateResult({
       </div>
       <div>
         <span className="field-label"><TermHelp explanation="期間觸及會檢查參考時點至到期日的整條價格路徑最高或最低點，因此通常高於只看到期收盤的穿越機率；中括號是雙側 95% CI。">期間觸及估計 / 雙側 95% CI</TermHelp></span>
-        <strong className="num">
-          {percent.format(result.pathTouch)} / [
-          {percent.format(result.pathTouchLower95)},{" "}
-          {percent.format(result.pathTouchUpper95)}]
-        </strong>
+        <AnimatedNumber
+          as="strong"
+          value={`${percent.format(result.pathTouch)} / [${percent.format(result.pathTouchLower95)}, ${percent.format(result.pathTouchUpper95)}]`}
+        />
         <small className="num block text-[#6B7280]">
           {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
         </small>
@@ -1202,6 +1221,8 @@ function CandidateResult({
         candidate={candidate}
         netPremiumPerShare={netPremiumPerShare}
         onNetPremiumPerShareChange={onNetPremiumPerShareChange}
+        recoveryFrontierSettings={recoveryFrontierSettings}
+        onRecoveryFrontierSettingsChange={onRecoveryFrontierSettingsChange}
         dataLastDate={dataLastDate}
         historyStale={historyStale}
         intraday={intraday}

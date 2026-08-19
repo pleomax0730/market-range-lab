@@ -10,6 +10,13 @@ describe("defaultDashboardSettings", () => {
     expect(defaultDashboardSettings().annualCapitalReturnRatePct).toBe("10");
     expect(defaultDashboardSettings().aggressiveExpirationRiskPct).toBe("5");
     expect(defaultDashboardSettings().aggressiveTouchRiskPct).toBe("10");
+    expect(defaultDashboardSettings().recoveryFrontierSettings).toMatchObject({
+      target: "strike",
+      deadlineIndex: 2,
+      minimumRecoveryRate: 0.75,
+      minimumLower95: 0.6,
+      minimumEffectiveAssignments: 20,
+    });
   });
 });
 
@@ -30,6 +37,7 @@ describe("normalizeDashboardSettings", () => {
     expect(normalized.annualCapitalReturnRatePct).toBe("10");
     expect(normalized.aggressiveExpirationRiskPct).toBe("5");
     expect(normalized.aggressiveTouchRiskPct).toBe("10");
+    expect(normalized.recoveryFrontierSettings.minimumMoneyness).toBe(0.7);
     expect("cash" in normalized).toBe(false);
     expect("obligation" in normalized).toBe(false);
   });
@@ -50,5 +58,17 @@ describe("normalizeDashboardSettings", () => {
     };
 
     expect(normalizeDashboardSettings(saved).expiryDate).toBe("2026-08-19");
+  });
+
+  it("resets a persisted break-even target because Premium is session-only", () => {
+    const saved = {
+      ...defaultDashboardSettings(),
+      recoveryFrontierSettings: {
+        ...defaultDashboardSettings().recoveryFrontierSettings,
+        target: "break-even" as const,
+      },
+    };
+
+    expect(normalizeDashboardSettings(saved).recoveryFrontierSettings.target).toBe("strike");
   });
 });

@@ -1,5 +1,9 @@
 import { openDB } from 'idb'
 import type { HistoryDataset } from '../domain/types'
+import {
+  DEFAULT_RECOVERY_FRONTIER_SETTINGS,
+  type RecoveryFrontierSettings,
+} from '../domain/candidate-recovery'
 
 const database = openDB('market-range-dashboard', 1, {
   upgrade(db) {
@@ -60,6 +64,7 @@ export type DashboardSettings = {
   aggressiveExpirationRiskPct: string
   aggressiveTouchRiskPct: string
   annualCapitalReturnRatePct: string
+  recoveryFrontierSettings: RecoveryFrontierSettings
 }
 
 type PersistedDashboardSettings = Partial<Omit<DashboardSettings, 'settingsVersion'>> & {
@@ -68,6 +73,7 @@ type PersistedDashboardSettings = Partial<Omit<DashboardSettings, 'settingsVersi
   aggressiveTouchRiskPct?: string
   annualCapitalReturnRatePct?: string
   horizon?: number
+  recoveryFrontierSettings?: Partial<RecoveryFrontierSettings>
 }
 
 export function defaultDashboardSettings(): DashboardSettings {
@@ -79,6 +85,27 @@ export function defaultDashboardSettings(): DashboardSettings {
     aggressiveExpirationRiskPct: '5',
     aggressiveTouchRiskPct: '10',
     annualCapitalReturnRatePct: '10',
+    recoveryFrontierSettings: { ...DEFAULT_RECOVERY_FRONTIER_SETTINGS },
+  }
+}
+
+function finiteOr(value: unknown, fallback: number) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback
+}
+
+function normalizeRecoveryFrontierSettings(
+  settings: Partial<RecoveryFrontierSettings> | undefined,
+): RecoveryFrontierSettings {
+  const defaults = DEFAULT_RECOVERY_FRONTIER_SETTINGS
+  return {
+    target: 'strike',
+    deadlineIndex: Math.min(3, Math.max(0, Math.round(finiteOr(settings?.deadlineIndex, defaults.deadlineIndex)))),
+    minimumRecoveryRate: Math.min(1, Math.max(0, finiteOr(settings?.minimumRecoveryRate, defaults.minimumRecoveryRate))),
+    minimumLower95: Math.min(1, Math.max(0, finiteOr(settings?.minimumLower95, defaults.minimumLower95))),
+    minimumEffectiveAssignments: Math.max(0, finiteOr(settings?.minimumEffectiveAssignments, defaults.minimumEffectiveAssignments)),
+    minimumMoneyness: Math.min(1, Math.max(0.1, finiteOr(settings?.minimumMoneyness, defaults.minimumMoneyness))),
+    maximumMoneyness: Math.min(1, Math.max(0.1, finiteOr(settings?.maximumMoneyness, defaults.maximumMoneyness))),
+    stepMoneyness: Math.min(0.1, Math.max(0.001, finiteOr(settings?.stepMoneyness, defaults.stepMoneyness))),
   }
 }
 
@@ -96,6 +123,9 @@ export function normalizeDashboardSettings(settings: PersistedDashboardSettings)
       Number(settings.annualCapitalReturnRatePct) >= 0
         ? settings.annualCapitalReturnRatePct
         : '10',
+    recoveryFrontierSettings: normalizeRecoveryFrontierSettings(
+      settings.recoveryFrontierSettings,
+    ),
   }
 }
 

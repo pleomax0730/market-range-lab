@@ -28,13 +28,13 @@ Suspected adjustment discontinuities are imported under the default attestation 
 
 ## Current Reference Price
 
-Regular-session quotes come from [Yahoo Finance](https://finance.yahoo.com/) through the local server proxy described in ADR 0005. Yahoo data is not merged into the historical dataset and is never used to fill missing historical rows.
+Regular-session quotes come from the [Nasdaq](https://www.nasdaq.com/) real-time quote API through the local server proxy described in ADR 0005. The Yahoo Finance chart API is a fallback when Nasdaq has no usable response. Quote data is not merged into the historical dataset and is never used to fill missing historical rows.
 
 ## Source Separation
 
 Historical provenance and quote provenance must always remain visible and distinct:
 
 - `Historical: Investing.com manual CSV`
-- `Current quote: Yahoo Finance regular session`
+- `Current quote: Nasdaq Real-Time` or `Yahoo Finance (fallback)`
 
 An export includes both source labels, URLs, timestamps, and the historical file hash so a result can be reproduced later.

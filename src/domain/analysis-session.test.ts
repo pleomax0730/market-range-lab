@@ -5,6 +5,7 @@ import {
   resolvePremiumAssumptions,
 } from './analysis-session'
 import type { HistoryDataset } from './types'
+import { DEFAULT_RECOVERY_FRONTIER_SETTINGS } from './candidate-recovery'
 
 function dataset(
   overrides: Partial<HistoryDataset> & Pick<HistoryDataset, 'interval' | 'bars'>,
@@ -66,6 +67,11 @@ describe('buildAnalysisSession', () => {
         candidate: '90',
         candidateSide: 'lower',
         netPremiumPerShare: '1.25',
+        recoveryFrontierSettings: {
+          ...DEFAULT_RECOVERY_FRONTIER_SETTINGS,
+          target: 'break-even',
+          deadlineIndex: 3,
+        },
         annualCapitalReturnRatePct: '12',
       },
     )
@@ -80,6 +86,11 @@ describe('buildAnalysisSession', () => {
       price: 90,
       side: 'lower',
       netPremiumPerShare: 1.25,
+      recoveryFrontierSettings: {
+        ...DEFAULT_RECOVERY_FRONTIER_SETTINGS,
+        target: 'break-even',
+        deadlineIndex: 3,
+      },
     })
     expect(plan.context?.premiumAssumptions.annualCapitalReturnRate).toBe(0.12)
     expect(plan.modelKey).toContain(active.id)

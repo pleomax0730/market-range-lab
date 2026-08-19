@@ -9,7 +9,11 @@ import {
 import { evaluateCandidate } from './statistics'
 import {
   calculateCandidatePutRecovery,
+  calculateRecoveryFrontier,
+  DEFAULT_RECOVERY_FRONTIER_SETTINGS,
   type CandidatePutRecoveryAnalysis,
+  type RecoveryFrontierAnalysis,
+  type RecoveryFrontierSettings,
 } from './candidate-recovery'
 import type {
   AssignmentRecoverySummary,
@@ -26,6 +30,7 @@ export type CandidateRequest = {
   price: number
   side: 'lower' | 'upper'
   netPremiumPerShare?: number
+  recoveryFrontierSettings?: RecoveryFrontierSettings
 }
 
 export type StatisticalReportInput = {
@@ -40,6 +45,7 @@ export type CandidateAnalysis = CandidateRequest & {
   sampleSize: number
   result: RiskSide
   recovery?: CandidatePutRecoveryAnalysis
+  recoveryFrontier?: RecoveryFrontierAnalysis
   premium?: PutPremiumAnalysis
   premiumUnavailableReason?: string
 }
@@ -183,6 +189,23 @@ export function calculateStatisticalReport(
           netPremiumPerShare: input.candidate.netPremiumPerShare,
         })
       : undefined
+    const recoveryFrontier = input.candidate.side === 'lower'
+      ? calculateRecoveryFrontier({
+          bars: input.analysis.bars,
+          paths,
+          anchorPrice: input.analysis.anchorPrice,
+          effectiveSampleSize: candidateAnalysis.effectiveSampleSize,
+          interval: input.analysis.interval ?? 'daily',
+          settings: input.candidate.recoveryFrontierSettings ?? {
+            ...DEFAULT_RECOVERY_FRONTIER_SETTINGS,
+            target: input.candidate.netPremiumPerShare === undefined
+              ? 'strike'
+              : 'break-even',
+          },
+          netPremiumPerShare: input.candidate.netPremiumPerShare,
+          premiumReferenceStrike: input.candidate.price,
+        })
+      : undefined
     candidate = {
       ...input.candidate,
       weeks: candidateAnalysis.weeks,
@@ -190,6 +213,7 @@ export function calculateStatisticalReport(
       sampleSize: paths.length,
       result: pauseCandidate(result, candidateAnalysis.weeks, input.gradePaused),
       recovery,
+      recoveryFrontier,
       premium,
       ...(input.candidate.side === 'upper'
         ? { premiumUnavailableReason: 'Naked Call 損失沒有上限；歷史最大漲幅無法形成可靠的最低 Premium。' }
@@ -451,6 +475,18 @@ function reportRows(report: AnalysisReport) {
         candidateRecoveryHistoricalAssignmentLower95: report.candidate?.recovery?.historicalAssignmentLower95 ?? '',
         candidateRecoveryHistoricalAssignmentUpper95: report.candidate?.recovery?.historicalAssignmentUpper95 ?? '',
         candidateRecoveryEvidence: report.candidate?.recovery?.evidence ?? '',
+        candidateRecoveryFrontierMethod: report.candidate?.recoveryFrontier?.method ?? '',
+        candidateRecoveryFrontierTarget: report.candidate?.recoveryFrontier?.settings.target ?? '',
+        candidateRecoveryFrontierPeriodUnit: report.candidate?.recoveryFrontier?.periodUnit ?? '',
+        candidateRecoveryFrontierDeadlinePeriods: report.candidate?.recoveryFrontier?.deadlinePeriods ?? '',
+        candidateRecoveryFrontierMinimumRecoveryRate: report.candidate?.recoveryFrontier?.settings.minimumRecoveryRate ?? '',
+        candidateRecoveryFrontierMinimumLower95: report.candidate?.recoveryFrontier?.settings.minimumLower95 ?? '',
+        candidateRecoveryFrontierMinimumEffectiveAssignments: report.candidate?.recoveryFrontier?.settings.minimumEffectiveAssignments ?? '',
+        candidateRecoveryFrontierMinimumMoneyness: report.candidate?.recoveryFrontier?.settings.minimumMoneyness ?? '',
+        candidateRecoveryFrontierMaximumMoneyness: report.candidate?.recoveryFrontier?.settings.maximumMoneyness ?? '',
+        candidateRecoveryFrontierStepMoneyness: report.candidate?.recoveryFrontier?.settings.stepMoneyness ?? '',
+        candidateRecoveryFrontierIntervals: JSON.stringify(report.candidate?.recoveryFrontier?.intervals ?? []),
+        candidateRecoveryFrontierPoints: JSON.stringify(report.candidate?.recoveryFrontier?.points ?? []),
         ...recoveryCsvFields(
           'candidateStrikeRecovery',
           report.candidate?.recovery?.strikeRecovery,

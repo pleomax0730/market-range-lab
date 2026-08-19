@@ -1,7 +1,12 @@
 import type { CandidateAnalysis } from '../domain/analysis-report'
+import type {
+  RecoveryFrontierAnalysis,
+  RecoveryFrontierSettings,
+} from '../domain/candidate-recovery'
 import type { AssignmentRecoverySummary } from '../domain/types'
 import { Input } from './ui/input'
 import { TermHelp } from './term-help'
+import { AnimatedNumber } from './ui/animated-number'
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -132,6 +137,267 @@ function evidenceLabel(candidate: CandidateAnalysis) {
   return ''
 }
 
+function RecoveryFrontierChart({ frontier }: { frontier: RecoveryFrontierAnalysis }) {
+  const width = 640
+  const height = 176
+  const inset = { left: 38, right: 12, top: 12, bottom: 24 }
+  const plotWidth = width - inset.left - inset.right
+  const plotHeight = height - inset.top - inset.bottom
+  const x = (index: number) => inset.left + (
+    frontier.points.length <= 1 ? 0 : index / (frontier.points.length - 1)
+  ) * plotWidth
+  const y = (value: number) => inset.top + (1 - Math.min(1, Math.max(0, value))) * plotHeight
+  const rateLine = frontier.points.map((point, index) =>
+    `${x(index).toFixed(1)},${y(point.recovery.recoveryRate).toFixed(1)}`,
+  ).join(' ')
+  const lowerLine = frontier.points.map((point, index) =>
+    `${x(index).toFixed(1)},${y(point.recovery.lower95 ?? 0).toFixed(1)}`,
+  ).join(' ')
+  const first = frontier.points[0]
+  const last = frontier.points.at(-1)
+
+  return (
+    <figure className="min-w-0" aria-label="候選價與歷史回復率圖">
+      <svg
+        className="h-auto w-full overflow-visible"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="黑線為期限內歷史回復率，虛線為百分之九十五信賴下限，綠點為符合門檻的候選價"
+      >
+        <rect
+          x={inset.left}
+          y={y(1)}
+          width={plotWidth}
+          height={Math.max(0, y(frontier.settings.minimumRecoveryRate) - y(1))}
+          fill="#F0F9E8"
+        />
+        {[0, 0.5, 1].map((tick) => (
+          <g key={tick}>
+            <line
+              x1={inset.left}
+              x2={width - inset.right}
+              y1={y(tick)}
+              y2={y(tick)}
+              stroke="#E5E5E5"
+            />
+            <text x={0} y={y(tick) + 4} className="fill-[#6B7280] text-[10px]">
+              {percent.format(tick)}
+            </text>
+          </g>
+        ))}
+        <line
+          x1={inset.left}
+          x2={width - inset.right}
+          y1={y(frontier.settings.minimumLower95)}
+          y2={y(frontier.settings.minimumLower95)}
+          stroke="#137A3D"
+          strokeDasharray="4 4"
+          opacity="0.55"
+        />
+        <polyline fill="none" stroke="#8A8A8A" strokeWidth="1.5" strokeDasharray="5 4" points={lowerLine} />
+        <polyline fill="none" stroke="#0D0D0D" strokeWidth="2.5" points={rateLine} />
+        {frontier.points.map((point, index) => point.qualifies && (
+          <circle key={point.moneyness} cx={x(index)} cy={y(point.recovery.recoveryRate)} r="3.5" fill="#137A3D" />
+        ))}
+        {first && <text x={inset.left} y={height - 4} className="fill-[#6B7280] text-[10px]">{money.format(first.price)}</text>}
+        {last && <text x={width - inset.right} y={height - 4} textAnchor="end" className="fill-[#6B7280] text-[10px]">{money.format(last.price)}</text>}
+      </svg>
+      <figcaption className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#6B7280]">
+        <span><span className="mr-1 inline-block h-0.5 w-4 bg-[#0D0D0D] align-middle" />歷史回復率</span>
+        <span><span className="mr-1 inline-block w-4 border-t border-dashed border-[#8A8A8A] align-middle" />95% 下限</span>
+        <span><span className="mr-1 inline-block size-2 rounded-full bg-[#137A3D] align-middle" />符合全部門檻</span>
+      </figcaption>
+    </figure>
+  )
+}
+
+function RecoveryFrontierPanel({
+  frontier,
+  settings,
+  onSettingsChange,
+  premiumAvailable,
+}: {
+  frontier: RecoveryFrontierAnalysis
+  settings: RecoveryFrontierSettings
+  onSettingsChange?: (settings: RecoveryFrontierSettings) => void
+  premiumAvailable: boolean
+}) {
+  const periodLabel = frontier.periodUnit === 'trading-session' ? '交易日' : '週'
+  const deadlines = frontier.periodUnit === 'trading-session' ? [7, 14, 21, 30] : [1, 2, 3, 4]
+  const closest = [...frontier.points].sort((left, right) => {
+    const deficit = (point: typeof left) =>
+      Math.max(0, settings.minimumRecoveryRate - point.recovery.recoveryRate) +
+      Math.max(0, settings.minimumLower95 - (point.recovery.lower95 ?? 0)) +
+      Math.max(0, settings.minimumEffectiveAssignments - point.effectiveAssignmentEvents) /
+        Math.max(1, settings.minimumEffectiveAssignments)
+    return deficit(left) - deficit(right)
+  })[0]
+  const update = (patch: Partial<RecoveryFrontierSettings>) => {
+    onSettingsChange?.({ ...settings, ...patch })
+  }
+  const selectClassName = 'h-10 w-full rounded-md border border-[#D8D8D8] bg-white px-3 text-sm text-[#0D0D0D] outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100'
+
+  return (
+    <section className="mt-5 border-y border-[#DADADA] bg-[#FCFCFC] py-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <h4 className="text-base font-bold">歷史回復支持區間</h4>
+          <p className="mt-1 text-xs leading-5 text-[#565656]">
+            掃描候選 Put 價位，只有回復率、95% 下限與有效履約事件同時達標才列入區間；這是歷史條件統計，不是安全履約價建議。
+          </p>
+        </div>
+        <span className={`rounded px-2 py-1 text-xs font-bold ${frontier.intervals.length ? 'bg-[#E7F6D9] text-[#245C0A]' : 'bg-[#EFEFEF] text-[#565656]'}`}>
+          {frontier.intervals.length ? '符合' : '目前無合格區間'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label>
+          <span className="field-label">回復目標</span>
+          <select
+            aria-label="回復目標"
+            className={selectClassName}
+            value={settings.target}
+            onChange={(event) => update({ target: event.target.value as RecoveryFrontierSettings['target'] })}
+          >
+            <option value="strike">回到履約價</option>
+            <option value="break-even" disabled={!premiumAvailable}>回到損益兩平價</option>
+          </select>
+        </label>
+        <label>
+          <span className="field-label">回復期限</span>
+          <select
+            aria-label="回復期限"
+            className={selectClassName}
+            value={String(settings.deadlineIndex)}
+            onChange={(event) => update({ deadlineIndex: Number(event.target.value) })}
+          >
+            {deadlines.map((deadline, index) => (
+              <option key={deadline} value={index}>{deadline} 個{periodLabel}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="field-label">最低歷史回復率</span>
+          <Input
+            className="num"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="最低歷史回復率"
+            value={Number((settings.minimumRecoveryRate * 100).toFixed(2))}
+            onChange={(event) => update({ minimumRecoveryRate: Number(event.target.value) / 100 })}
+          />
+        </label>
+        <label>
+          <span className="field-label">95% 下限門檻</span>
+          <Input
+            className="num"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="95% 下限門檻"
+            value={Number((settings.minimumLower95 * 100).toFixed(2))}
+            onChange={(event) => update({ minimumLower95: Number(event.target.value) / 100 })}
+          />
+        </label>
+      </div>
+
+      <details className="mt-3 border-t border-[#E5E5E5] pt-3">
+        <summary className="cursor-pointer text-xs font-semibold text-[#565656] outline-none focus-visible:ring-2 focus-visible:ring-blue-600">
+          掃描與證據條件
+        </summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label>
+            <span className="field-label">最低有效履約事件</span>
+            <Input className="num" type="number" min="0" step="1" value={settings.minimumEffectiveAssignments} onChange={(event) => update({ minimumEffectiveAssignments: Number(event.target.value) })} />
+          </label>
+          <label>
+            <span className="field-label">掃描最低價（現價 %）</span>
+            <Input className="num" type="number" min="10" max="100" step="1" value={Number((settings.minimumMoneyness * 100).toFixed(2))} onChange={(event) => update({ minimumMoneyness: Number(event.target.value) / 100 })} />
+          </label>
+          <label>
+            <span className="field-label">掃描最高價（現價 %）</span>
+            <Input className="num" type="number" min="10" max="100" step="1" value={Number((settings.maximumMoneyness * 100).toFixed(2))} onChange={(event) => update({ maximumMoneyness: Number(event.target.value) / 100 })} />
+          </label>
+          <label>
+            <span className="field-label">價位間距（現價 %）</span>
+            <Input className="num" type="number" min="0.1" max="10" step="0.1" value={Number((settings.stepMoneyness * 100).toFixed(2))} onChange={(event) => update({ stepMoneyness: Number(event.target.value) / 100 })} />
+          </label>
+        </div>
+      </details>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-start">
+        <div>
+          <div className="border-b border-[#E5E5E5] pb-4">
+            <div className="text-xs text-[#6B7280]">
+              {frontier.deadlinePeriods} 個{periodLabel}內 · 回復率至少 {percent.format(settings.minimumRecoveryRate)} · 95% 下限至少 {percent.format(settings.minimumLower95)}
+            </div>
+            {frontier.intervals.length ? (
+              <div className="mt-2 space-y-1">
+                {frontier.intervals.map((interval) => (
+                  <AnimatedNumber
+                    key={`${interval.minimumPrice}-${interval.maximumPrice}`}
+                    as="div"
+                    className="text-xl font-bold tracking-[-0.02em]"
+                    value={`${money.format(interval.minimumPrice)}–${money.format(interval.maximumPrice)}`}
+                  />
+                ))}
+                <p className="text-xs text-[#565656]">
+                  相對現價 {percent.format(frontier.intervals[0].minimumMoneyness - 1)} 至 {percent.format(frontier.intervals.at(-1)!.maximumMoneyness - 1)}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-2">
+                <div className="text-base font-bold">目前沒有歷史支持區間</div>
+                {closest && (
+                  <p className="mt-1 text-xs leading-5 text-[#565656]">
+                    最接近門檻：{money.format(closest.price)}，回復率 {percent.format(closest.recovery.recoveryRate)}、95% 下限 {percent.format(closest.recovery.lower95 ?? 0)}、有效履約約 {closest.effectiveAssignmentEvents.toFixed(1)} 次。
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="mt-4">
+            <RecoveryFrontierChart frontier={frontier} />
+          </div>
+        </div>
+
+        <div className="max-h-[330px] overflow-auto border-y border-[#E5E5E5]">
+          <table className="w-full min-w-[620px] border-collapse text-left text-xs">
+            <thead className="sticky top-0 bg-[#FCFCFC] text-[#565656]">
+              <tr>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">候選價</th>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">回復目標</th>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">期限內回復</th>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">95% 下限</th>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">有效事件</th>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">結果</th>
+              </tr>
+            </thead>
+            <tbody>
+              {frontier.points.map((point) => (
+                <tr key={point.moneyness} className="border-t border-[#EAEAEA]">
+                  <td className="num whitespace-nowrap px-2 py-2 font-semibold">{money.format(point.price)}</td>
+                  <td className="num whitespace-nowrap px-2 py-2 text-[#565656]">{money.format(point.targetPrice)}</td>
+                  <td className="num whitespace-nowrap px-2 py-2">{percent.format(point.recovery.recoveryRate)}</td>
+                  <td className="num whitespace-nowrap px-2 py-2">{percent.format(point.recovery.lower95 ?? 0)}</td>
+                  <td className="num whitespace-nowrap px-2 py-2">{point.effectiveAssignmentEvents.toFixed(1)}</td>
+                  <td className={`whitespace-nowrap px-2 py-2 font-semibold ${point.qualifies ? 'text-[#137A3D]' : 'text-[#6B7280]'}`}>
+                    {point.qualifies ? '通過' : point.effectiveAssignmentEvents < settings.minimumEffectiveAssignments ? '證據不足' : '未達門檻'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function CandidateRecoveryPanel({
   candidate,
   netPremiumPerShare,
@@ -139,6 +405,8 @@ export function CandidateRecoveryPanel({
   dataLastDate,
   historyStale,
   intraday = false,
+  recoveryFrontierSettings,
+  onRecoveryFrontierSettingsChange,
 }: {
   candidate: CandidateAnalysis
   netPremiumPerShare: string
@@ -146,6 +414,8 @@ export function CandidateRecoveryPanel({
   dataLastDate: string
   historyStale: boolean
   intraday?: boolean
+  recoveryFrontierSettings?: RecoveryFrontierSettings
+  onRecoveryFrontierSettingsChange?: (settings: RecoveryFrontierSettings) => void
 }) {
   if (candidate.side !== 'lower') return null
   if (!candidate.recovery) {
@@ -178,6 +448,7 @@ export function CandidateRecoveryPanel({
       ? 'text-[#92400E]'
       : 'text-[#137A3D]'
   const evidencePrefix = evidenceLabel(candidate)
+  const frontierSettings = recoveryFrontierSettings ?? candidate.recoveryFrontier?.settings
 
   return (
     <section className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
@@ -210,6 +481,15 @@ export function CandidateRecoveryPanel({
         <p role="alert" className="mt-3 border-l-2 border-amber-400 pl-3 text-xs leading-5 text-[#6B4F00]">
           {historyStale ? '歷史資料未更新。' : '風險分級目前暫停。'} 歷史資料截至 {dataLastDate}；可查看價格回復統計，但不是最新市場預測。
         </p>
+      )}
+
+      {candidate.recoveryFrontier && frontierSettings && (
+        <RecoveryFrontierPanel
+          frontier={candidate.recoveryFrontier}
+          settings={frontierSettings}
+          onSettingsChange={onRecoveryFrontierSettingsChange}
+          premiumAvailable={breakEvenMatchesInput}
+        />
       )}
 
       <div className="mt-3 grid gap-x-6 divide-y divide-[#E5E5E5] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
