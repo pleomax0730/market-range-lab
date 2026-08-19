@@ -40,6 +40,7 @@ import { CandidateRecoveryPanel } from "./components/candidate-recovery-panel";
 import { RiskGradeBadge } from "./components/risk-grade-badge";
 import { BacktestSummary } from "./components/backtest-summary";
 import { PutDecisionSummary } from "./components/put-decision-summary";
+import { MobileExportMenu } from "./components/mobile-export-menu";
 import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
@@ -288,39 +289,7 @@ export function App() {
               <Download size={15} /> JSON
             </Button>
           </div>
-          {report && !analysisLoading ? (
-            <details className="group relative sm:hidden">
-              <summary className="flex size-9 cursor-pointer list-none items-center justify-center rounded-md border border-[#E5E5E5] bg-white outline-none transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-600 [&::-webkit-details-marker]:hidden" aria-label="匯出分析">
-                <Download size={16} />
-              </summary>
-              <div className="ui-enter absolute right-0 z-30 mt-2 w-36 rounded-md bg-white p-1 shadow-[0_8px_24px_rgba(13,13,13,0.14)]">
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded px-3 text-left text-sm font-semibold outline-none transition-colors duration-150 hover:bg-[#F0F0F0] focus-visible:bg-[#F0F0F0]"
-                  onClick={(event) => {
-                    exportResults("csv");
-                    event.currentTarget.closest("details")?.removeAttribute("open");
-                  }}
-                >
-                  <Download size={14} /> CSV
-                </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded px-3 text-left text-sm font-semibold outline-none transition-colors duration-150 hover:bg-[#F0F0F0] focus-visible:bg-[#F0F0F0]"
-                  onClick={(event) => {
-                    exportResults("json");
-                    event.currentTarget.closest("details")?.removeAttribute("open");
-                  }}
-                >
-                  <Download size={14} /> JSON
-                </button>
-              </div>
-            </details>
-          ) : (
-            <Button variant="outline" size="icon" className="sm:hidden" disabled aria-label="匯出分析">
-              <Download size={16} />
-            </Button>
-          )}
+          <MobileExportMenu disabled={!report || analysisLoading} onExport={exportResults} />
         </div>
       </header>
 
@@ -446,7 +415,7 @@ export function App() {
                 <Database size={17} />
                 <h2 className="text-sm font-bold">本機資料集</h2>
               </div>
-              <Tooltip content="Clear all locally stored datasets">
+              <Tooltip content="清除所有本機儲存的資料集">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -608,7 +577,7 @@ export function App() {
                       }
                     />
                   </label>
-                  <Tooltip content="Refresh regular-session quote from Yahoo Finance">
+                  <Tooltip content="從 Yahoo Finance 重新擷取常規交易時段報價">
                     <Button
                       variant="outline"
                       size="icon"
@@ -1067,79 +1036,11 @@ function RiskTable({
           </strong>
         </div>
         <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 1st percentile：約只有 1% 的同類歷史路徑曾出現更深的盤中跌幅。這是經驗分位數，不是保證。">歷史路徑 1%</TermHelp></span>
-          <strong className="num">
-            {percent.format(analysis.empirical.pathLowPct)}
-          </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 99th percentile：約只有 1% 的同類歷史路徑曾出現更高的盤中漲幅。這是經驗分位數，不是保證。">歷史路徑 99%</TermHelp></span>
-          <strong className="num">
-            {percent.format(analysis.empirical.pathHighPct)}
-          </strong>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656] lg:grid-cols-4">
-        <div>
-          <span className="block text-[#6B7280]">路徑 1% bootstrap CI</span>
-          <strong className="num">
-            [{percent.format(analysis.bootstrap.pathLowPct[0])},{" "}
-            {percent.format(analysis.bootstrap.pathLowPct[1])}]
-          </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]">路徑 99% bootstrap CI</span>
-          <strong className="num">
-            [{percent.format(analysis.bootstrap.pathHighPct[0])},{" "}
-            {percent.format(analysis.bootstrap.pathHighPct[1])}]
-          </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]">歷史真實極值</span>
-          <strong className="num">
-            {percent.format(analysis.empirical.pathMinPct)} /{" "}
-            {percent.format(analysis.empirical.pathMaxPct)}
-          </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="Extreme Value Theory stress：只有尾部擬合通過穩定性與適合度檢查才顯示。它是壓力情境，不參與門檻分級。">EVT stress</TermHelp></span>
-          <strong className="num">
-            {analysis.evt.lowerStressPct === undefined
-              ? "不可用"
-              : percent.format(analysis.evt.lowerStressPct)}{" "}
-            /{" "}
-            {analysis.evt.upperStressPct === undefined
-              ? "不可用"
-              : percent.format(analysis.evt.upperStressPct)}
-          </strong>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656] lg:grid-cols-4">
-        <div>
           <span className="block text-[#6B7280]"><TermHelp explanation="即使樣本不足以完成保守認證，仍以波動調整後的 0.5% 到期尾部、1% 盤中尾部、bootstrap 下緣與有效 EVT 壓力取較不利值。它是模型估計，不是保證。">模型保守估計 Put / Call</TermHelp></span>
           <strong className="num">
             {money.format(analysis.conservativeEstimate.lower.price)} /{" "}
             {money.format(analysis.conservativeEstimate.upper.price)}
           </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="由匯入價格資料最近 20 個交易日（週線資料則為 12 週）的收盤報酬估算，僅用來把完整歷史路徑調整至目前波動狀態。">當前年化歷史波動</TermHelp></span>
-          <strong className="num">
-            {analysis.volatilityAdjustment.targetAnnualized === undefined
-              ? "不可用"
-              : percent.format(analysis.volatilityAdjustment.targetAnnualized)}
-          </strong>
-        </div>
-        <div>
-          <span className="block text-[#6B7280]"><TermHelp explanation="目前波動除以每條歷史路徑起點波動的中位倍率。模型同時保留原始完整歷史與調整後路徑，取較不利者；倍率限制在 0.5–2 倍。">波動調整倍率中位數</TermHelp></span>
-          <strong className="num">
-            {analysis.volatilityAdjustment.medianScale === undefined
-              ? "不可用"
-              : `${analysis.volatilityAdjustment.medianScale.toFixed(2)}×`}
-          </strong>
-          <small className="num block text-[#6B7280]">
-            封頂 {analysis.volatilityAdjustment.cappedPathCount} / {analysis.sampleSize}
-          </small>
         </div>
         <div>
           <span className="block text-[#6B7280]"><TermHelp explanation="在單側 95% 風險上限同時符合到期 0.5% 與盤中 1% 時，顯示可被有限歷史證據認證的最高 Put 價或最低 Call 價。它通常比模型保守估計更遠。">95% 認證 Put / Call</TermHelp></span>
@@ -1153,6 +1054,61 @@ function RiskTable({
           </strong>
         </div>
       </div>
+      <details className="group mt-3 border-t border-[#EFEFEF]">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded py-3 outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+          <span>
+            <strong className="block text-xs text-[#565656]">進階模型診斷</strong>
+            <small className="mt-0.5 block text-[11px] text-[#6B7280]">歷史分位數、bootstrap、EVT 與波動調整</small>
+          </span>
+          <ChevronDown className="text-[#6B7280] transition-transform duration-150 group-open:rotate-180" size={16} />
+        </summary>
+        <div className="grid grid-cols-2 gap-3 pb-2 pt-1 text-xs text-[#565656] lg:grid-cols-4">
+          <div>
+            <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 1st percentile：約只有 1% 的同類歷史路徑曾出現更深的盤中跌幅。這是經驗分位數，不是保證。">歷史路徑 1%</TermHelp></span>
+            <strong className="num">{percent.format(analysis.empirical.pathLowPct)}</strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 99th percentile：約只有 1% 的同類歷史路徑曾出現更高的盤中漲幅。這是經驗分位數，不是保證。">歷史路徑 99%</TermHelp></span>
+            <strong className="num">{percent.format(analysis.empirical.pathHighPct)}</strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]">路徑 1% bootstrap CI</span>
+            <strong className="num">[{percent.format(analysis.bootstrap.pathLowPct[0])}, {percent.format(analysis.bootstrap.pathLowPct[1])}]</strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]">路徑 99% bootstrap CI</span>
+            <strong className="num">[{percent.format(analysis.bootstrap.pathHighPct[0])}, {percent.format(analysis.bootstrap.pathHighPct[1])}]</strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]">歷史真實極值</span>
+            <strong className="num">{percent.format(analysis.empirical.pathMinPct)} / {percent.format(analysis.empirical.pathMaxPct)}</strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]"><TermHelp explanation="Extreme Value Theory stress：只有尾部擬合通過穩定性與適合度檢查才顯示。它是壓力情境，不參與門檻分級。">EVT stress</TermHelp></span>
+            <strong className="num">
+              {analysis.evt.lowerStressPct === undefined ? "不可用" : percent.format(analysis.evt.lowerStressPct)} /{" "}
+              {analysis.evt.upperStressPct === undefined ? "不可用" : percent.format(analysis.evt.upperStressPct)}
+            </strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]"><TermHelp explanation="由匯入價格資料最近 20 個交易日（週線資料則為 12 週）的收盤報酬估算，僅用來把完整歷史路徑調整至目前波動狀態。">當前年化歷史波動</TermHelp></span>
+            <strong className="num">
+              {analysis.volatilityAdjustment.targetAnnualized === undefined
+                ? "不可用"
+                : percent.format(analysis.volatilityAdjustment.targetAnnualized)}
+            </strong>
+          </div>
+          <div>
+            <span className="block text-[#6B7280]"><TermHelp explanation="目前波動除以每條歷史路徑起點波動的中位倍率。模型同時保留原始完整歷史與調整後路徑，取較不利者；倍率限制在 0.5–2 倍。">波動調整倍率中位數</TermHelp></span>
+            <strong className="num">
+              {analysis.volatilityAdjustment.medianScale === undefined
+                ? "不可用"
+                : `${analysis.volatilityAdjustment.medianScale.toFixed(2)}×`}
+            </strong>
+            <small className="num block text-[#6B7280]">封頂 {analysis.volatilityAdjustment.cappedPathCount} / {analysis.sampleSize}</small>
+          </div>
+        </div>
+      </details>
       <BacktestSummary analysis={analysis} />
       {analysis.weeks > 4 && (
         <p className="mt-3 text-xs text-[#6B7280]">

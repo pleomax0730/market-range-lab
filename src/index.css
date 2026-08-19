@@ -22,4 +22,11 @@ button, input, select { font: inherit; }
 .table-sticky-first { left: 0; z-index: 10; }
 .table-sticky-second { left: 110px; z-index: 10; }
 .table-sticky-header { background: var(--color-surface-muted); z-index: 20; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } .tooltip-content, .ui-enter { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .tooltip-content, .ui-enter { transform: none; transition-property: opacity; transition-duration: 120ms; }
+  .animate-spin-fast { animation: none; }
+  details > summary svg { transition: none !important; }
+  button, summary, label { transition-property: color, background-color, border-color, opacity !important; }
+  button:active, summary:active, label:active { transform: none !important; scale: 1 !important; }
+}
