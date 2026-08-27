@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateCandidatePutRecovery,
   resolveRecoveryWindowSelection,
+  calculateRecoveryFrontier,
   summarizeRecoveryObservations,
 } from './candidate-recovery'
 import type { HistoricalPath } from './statistics'
@@ -12,6 +13,59 @@ function bar(date: string, close: number): PriceBar {
 }
 
 describe('candidate Put recovery', () => {
+  it('finds the contiguous strike range supported by the selected recovery deadline', () => {
+    const closes = [
+      75, 85, 95, 105,
+      85, 88, 92, 96,
+      88, 89, 90, 91,
+      95, 96, 97, 98,
+    ]
+    const bars = closes.map((close, index) => bar(
+      new Date(Date.UTC(2026, 0, 2 + index)).toISOString().slice(0, 10),
+      close,
+    ))
+    const paths: HistoricalPath[] = [0, 4, 8, 12].map((targetIndex) => ({
+      closeReturn: bars[targetIndex].close / 100 - 1,
+      lowReturn: bars[targetIndex].close / 100 - 1,
+      highReturn: 0,
+      basePrice: 100,
+      targetIndex,
+      targetDate: bars[targetIndex].date,
+    }))
+
+    const frontier = calculateRecoveryFrontier({
+      bars,
+      paths,
+      anchorPrice: 100,
+      effectiveSampleSize: 4,
+      interval: 'daily',
+      settings: {
+        target: 'strike',
+        deadlineIndex: 0,
+        minimumRecoveryRate: 0.75,
+        minimumLower95: 0,
+        minimumEffectiveAssignments: 1,
+        minimumMoneyness: 0.8,
+        maximumMoneyness: 1,
+        stepMoneyness: 0.1,
+      },
+    })
+
+    expect(frontier.deadlinePeriods).toBe(7)
+    expect(frontier.points.map((point) => ({
+      price: point.price,
+      qualifies: point.qualifies,
+    }))).toEqual([
+      { price: 80, qualifies: true },
+      { price: 90, qualifies: true },
+      { price: 100, qualifies: false },
+    ])
+    expect(frontier.intervals).toEqual([expect.objectContaining({
+      minimumPrice: 80,
+      maximumPrice: 90,
+    })])
+  })
+
   it('maps the strike by moneyness and treats an expiration exactly at strike as unassigned', () => {
     const bars = [
       bar('2026-01-02', 79),

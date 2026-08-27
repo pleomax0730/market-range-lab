@@ -22,7 +22,7 @@
 | --- | --- |
 | UI | React、TypeScript、Vite、Tailwind、shadcn/ui |
 | 分析 | 領域邏輯於 `src/domain`，Web Worker 於 `src/workers` |
-| 報價 | `server/quote.mjs`（Yahoo Finance chart API） |
+| 報價 | `server/quote.mjs`（Nasdaq 即時報價；Yahoo Finance 備援） |
 | 儲存 | IndexedDB（`idb`） |
 | 測試 | Vitest、Testing Library |
 
@@ -107,7 +107,7 @@ http://127.0.0.1:4173
 | 資料 | 行為 |
 | --- | --- |
 | 歷史 CSV | 僅本機 IndexedDB；顯示檔名、SHA-256、日期範圍、匯入時間 |
-| 報價 | 僅將 **Symbol** 送至本機伺服器再轉 Yahoo |
+| 報價 | 僅將 **Symbol** 送至本機伺服器再轉 Nasdaq 或 Yahoo 備援 |
 | 清除 | 可刪除單一資料集或清空本機全部 |
 
 歷史來源與即時報價來源在 UI 與匯出中分開標示。詳見 [docs/data-sources.md](./docs/data-sources.md)。
@@ -140,6 +140,8 @@ http://127.0.0.1:4173
 
 下檔 Put 另外追蹤到期跌破後，未來收盤首次重新站上當時模型履約價所需的交易期數，並顯示 5／20／60 個交易日內的回復比例。使用者也可指定一個到期後日期；Daily 資料會換算成實際交易日，週末或休市日以前一個正常交易日收盤為準。接近資料尾端且觀察期不足的案例視為右截尾，不會被誤算為未在該期限內解套。輸入每股淨 Premium 後，另以履約價減 Premium 作為真正損益兩平價；未輸入時顯示的只是回到履約價。
 
+自訂下檔 Put 另提供「歷史回復支持區間」：預設掃描現價 70%–100%、每 0.5% 一格，找出在 7／14／21／30 個交易日內同時符合歷史回復率、Greenwood 型 95% 下限與最低有效履約事件門檻的連續候選價區間。輸入每股淨 Premium 後可改查損益兩平價；Weekly-only 資料只顯示 1–4 週。沒有價位達標時不會自動降低門檻，只顯示最接近門檻的候選價。
+
 ### Put Premium 參考（僅下檔）
 
 在歷史路徑上計算到期 payoff 損失後，提供四個每股參考（預設交易成本 $0.03、年化資金門檻 10% 可調）：
@@ -161,7 +163,7 @@ http://127.0.0.1:4173
 │   ├── data-sources.md     # 資料來源
 │   └── adr/                # 架構決策
 ├── server/
-│   └── quote.mjs           # Yahoo 報價正規化與快取
+│   └── quote.mjs           # 自動報價正規化與快取
 ├── server.mjs              # 建置後靜態站 + API
 ├── src/
 │   ├── App.tsx             # 儀表板主介面

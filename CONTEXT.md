@@ -92,6 +92,10 @@ _Avoid_: In-sample fit, future-data validation, guarantee
 For a downside boundary that experiences an Expiration Breach in an Expanding-Window Backtest, the number of subsequent Daily sessions or Weekly bars until Close first returns to or above that historical model boundary. Recovery-window rates exclude unresolved observations whose remaining history is shorter than the stated window.
 _Avoid_: Guaranteed recovery time, premium-adjusted break-even, treating right-censored observations as failures
 
+**Historical Recovery Support Interval**:
+One or more contiguous downside Candidate Price intervals whose conditional historical recovery rate, Greenwood-type 95% lower confidence bound, and effective Assignment Recovery event count all meet explicit user-visible thresholds for a selected recovery deadline. Daily History uses 7/14/21/30 trading-session deadlines; Weekly-Only History uses 1/2/3/4 weeks. The target is either the mapped strike or a premium-rate-scaled break-even price.
+_Avoid_: Safe strike range, guaranteed recovery range, silently relaxed threshold, option-chain recommendation
+
 **EVT Stress Estimate**:
 A separately identified extreme-tail extrapolation used only for stress context when its fit diagnostics are acceptable; it never replaces observed extremes or determines a Safety Grade.
 _Avoid_: Primary estimate, guaranteed worst case

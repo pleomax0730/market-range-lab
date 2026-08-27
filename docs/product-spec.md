@@ -15,7 +15,7 @@ The current version includes auditable historical compensation floors for cash-s
 - Symbol, inferred from the uploaded filename (for example, `SOXL ETF Stock Price History Daily.csv`); company-name or long-token matches show a confirmation field so the Yahoo ticker can be corrected before import (for example, `PALANTIR -> PLTR`).
 - Daily CSV, preferred because it preserves session-level paths.
 - Weekly CSV, accepted as a lower-resolution canonical fallback and optionally compared with Daily History.
-- Current regular-session quote from Yahoo, or a visibly identified manual override.
+- Current regular-session quote from Nasdaq with Yahoo fallback, or a visibly identified manual override.
 - One selected Candidate Price for detailed evaluation, while system-generated range boundaries remain continuous prices.
 - Annual cash-secured capital-return hurdle, persisted locally and defaulted to 10%; changing it reprices the derived floors without recomputing historical paths.
 - Optional advanced overrides for grading thresholds; every override is included in exports.
@@ -36,7 +36,7 @@ For a Safety Grade, Daily History must extend through at least the regular sessi
 
 ## Quote Policy
 
-The local server queries Yahoo every 30 seconds during the regular session and normalizes symbol, price, timestamp, exchange, session, and source. Pre-market, after-hours, and BOATS overnight values are excluded. Outside regular hours, the final regular close is used.
+The local server queries Nasdaq every 30 seconds during the regular session and normalizes symbol, price, timestamp, exchange, session, and source. Yahoo Finance chart data is used only as a labeled fallback. Pre-market, after-hours, and BOATS overnight values are excluded. Outside regular hours, the final regular close is used.
 
 An open-session quote older than two minutes is stale: automatic grading pauses until a fresh quote arrives or the user enters a Manual Reference Price. Quote source, session, timestamp, ET time, Taiwan time, and override status are always visible.
 
@@ -121,6 +121,8 @@ Downside levels support put-oriented analysis; upside levels support call-orient
 
 Downside Put candidates additionally show historical premium compensation floors. These are not option-chain quotes, Black-Scholes values, implied probabilities, or claims that a trade is worthwhile. Upper Call candidates explicitly suppress the premium floor because Naked Call loss is unbounded.
 
+Downside Put candidates also expose a Historical Recovery Support Interval explorer. It scans a configurable continuous moneyness grid (default 70%–100% of the Reference Price in 0.5% increments) and reports every contiguous Candidate Price interval that satisfies all selected conditions: recovery by 7/14/21/30 Daily sessions or 1/2/3/4 Weekly bars, a minimum Kaplan–Meier recovery estimate, a Greenwood-type 95% lower confidence bound, and a minimum effective assignment-event count. Defaults are 75% recovery, 60% lower bound, and 20 effective assignment events. A valid net Premium enables break-even recovery using the candidate Premium/strike ratio. If no price qualifies, the UI reports no supported interval and identifies the closest point without relaxing thresholds. Results remain historical support evidence, not safe-strike or option-chain recommendations, and all settings, points, and intervals are included in JSON and CSV exports.
+
 ## Dashboard Workflow
 
 1. Choose or add an Active Symbol.
@@ -129,8 +131,9 @@ Downside Put candidates additionally show historical premium compensation floors
 4. Enter an optional Candidate Price and choose Put or Call.
 5. Select an actual expiry date, using a weekly shortcut or the date input.
 6. Review the expiry-specific distribution, range, touch, close, confidence, and stress views.
-7. For a downside Put candidate, review the four premium compensation floors.
-8. Optionally pause quote refresh, override the Reference Price, or export the result.
+7. For a downside Put candidate, inspect the Historical Recovery Support Interval and adjust its explicit evidence thresholds if needed.
+8. Review the four premium compensation floors.
+9. Optionally pause quote refresh, override the Reference Price, or export the result.
 
 The Candidate Price panel displays the inherited ET Reference Date and session state together with the selected expiry close and remaining regular-session count. Changing a Candidate Price never silently changes that evaluation context.
 
@@ -160,7 +163,7 @@ The application exports JSON and CSV, not PDF. Exports include all inputs, data 
 - Mixed or invalid OHLC basis: reject the dataset.
 - Suspicious adjustment discontinuity: import with a visible warning under the default attestation.
 - Stale historical file: show ranges but suppress grades.
-- Stale or failed Yahoo quote: pause automatic grading and offer manual price.
+- Stale or failed automatic quote: pause automatic grading and offer manual price.
 - Unsupported symbol metadata: reject automatic mode and explain the supported universe.
 - Insufficient effective paths: show estimates and `Insufficient Evidence` without a grade.
 

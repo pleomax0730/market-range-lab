@@ -1,5 +1,6 @@
 import type { HorizonAnalysis, RiskSide } from '../domain/types'
 import { RiskGradeBadge } from './risk-grade-badge'
+import { AnimatedNumber } from './ui/animated-number'
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -61,10 +62,8 @@ export function PutDecisionSummary({
                 <DecisionStatus row={row} stale={stale} />
               </div>
               <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <strong className="num text-2xl font-bold">
-                  {unavailable ? '—' : money.format(row.price)}
-                </strong>
-                {!unavailable && <span className="num text-xs text-[#565656]">{percent.format(row.returnPct)}</span>}
+                <AnimatedNumber as="strong" className="text-2xl font-bold" value={unavailable ? '—' : money.format(row.price)} />
+                {!unavailable && <AnimatedNumber className="text-xs text-[#565656]" value={percent.format(row.returnPct)} />}
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
                 <div>

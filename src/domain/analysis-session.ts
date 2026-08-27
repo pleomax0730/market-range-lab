@@ -12,6 +12,7 @@ import {
   type PremiumAssumptions,
 } from './premium-analysis'
 import type { HistoryDataset } from './types'
+import type { RecoveryFrontierSettings } from './candidate-recovery'
 
 export type GradePauseReason =
   | 'stale-history'
@@ -42,6 +43,7 @@ export type AnalysisSessionKnobs = {
   candidateSide: 'lower' | 'upper'
   netPremiumPerShare?: string
   recoveryThroughDate?: string
+  recoveryFrontierSettings?: RecoveryFrontierSettings
   annualCapitalReturnRatePct: string
 }
 
@@ -221,6 +223,9 @@ export function buildAnalysisSession(
                 recoveryThroughSessionDate: recoveryWindow.throughSessionDate,
                 recoveryWindowPeriods: recoveryWindow.periods,
               }
+            : {}),
+          ...(knobs.candidateSide === 'lower' && knobs.recoveryFrontierSettings
+            ? { recoveryFrontierSettings: knobs.recoveryFrontierSettings }
             : {}),
         }
       : undefined,

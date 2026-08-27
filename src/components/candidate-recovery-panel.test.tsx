@@ -103,6 +103,63 @@ const candidate: CandidateAnalysis = {
   recoveryThroughDate: '2026-08-30',
   recoveryThroughSessionDate: '2026-08-28',
   recoveryWindowPeriods: 25,
+  recoveryFrontier: {
+    method: 'frontier test',
+    periodUnit: 'trading-session',
+    deadlinePeriods: 30,
+    settings: {
+      target: 'break-even',
+      deadlineIndex: 3,
+      minimumRecoveryRate: 0.75,
+      minimumLower95: 0.6,
+      minimumEffectiveAssignments: 20,
+      minimumMoneyness: 0.7,
+      maximumMoneyness: 1,
+      stepMoneyness: 0.005,
+    },
+    points: [
+      {
+        price: 55,
+        targetPrice: 54,
+        moneyness: 0.77,
+        assignmentEvents: 40,
+        effectiveAssignmentEvents: 22,
+        historicalAssignmentRate: 0.05,
+        evidence: 'sufficient',
+        recovery: { ...windows[1], periods: 30, recoveryRate: 0.82, lower95: 0.65 },
+        qualifies: true,
+      },
+      {
+        price: 62,
+        targetPrice: 60.84,
+        moneyness: 0.87,
+        assignmentEvents: 58,
+        effectiveAssignmentEvents: 31,
+        historicalAssignmentRate: 0.07,
+        evidence: 'sufficient',
+        recovery: { ...windows[1], periods: 30, recoveryRate: 0.79, lower95: 0.62 },
+        qualifies: true,
+      },
+      {
+        price: 67,
+        targetPrice: 65.75,
+        moneyness: 0.94,
+        assignmentEvents: 120,
+        effectiveAssignmentEvents: 43.76,
+        historicalAssignmentRate: 120 / 850,
+        evidence: 'sufficient',
+        recovery: { ...windows[1], periods: 30, recoveryRate: 0.68, lower95: 0.54 },
+        qualifies: false,
+      },
+    ],
+    intervals: [{
+      minimumPrice: 55,
+      maximumPrice: 62,
+      minimumMoneyness: 0.77,
+      maximumMoneyness: 0.87,
+      pointCount: 2,
+    }],
+  },
 }
 
 afterEach(cleanup)
@@ -134,9 +191,15 @@ describe('CandidateRecoveryPanel', () => {
     expect(screen.getByText(/有效約 43.8 次/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '履約價（未計 Premium）' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '損益兩平價（實際回本）' })).toBeInTheDocument()
-    expect(screen.getByText('$65.75')).toBeInTheDocument()
+    expect(screen.getAllByText('$65.75')).not.toHaveLength(0)
     expect(screen.getAllByText(/以 2026-08-28 收盤為準/)).toHaveLength(2)
     expect(screen.getByText('查看完整回本統計')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '歷史回復支持區間' })).toBeInTheDocument()
+    expect(screen.getByText('$55.00–$62.00')).toBeInTheDocument()
+    expect(screen.getByText(/30 個交易日內/)).toBeInTheDocument()
+    expect(screen.getByLabelText('回復期限')).toHaveValue('3')
+    expect(screen.getByLabelText('最低歷史回復率')).toHaveValue(75)
+    expect(screen.getByText('符合')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('歷史資料未更新')
   })
 
