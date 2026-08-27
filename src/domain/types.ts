@@ -116,6 +116,7 @@ export type AssignmentRecoverySummary = {
   p75CalendarDays?: number
   maximumCalendarDays?: number
   windows: RecoveryWindowResult[]
+  customWindow?: RecoveryWindowResult
 }
 
 export type HorizonBacktest = {

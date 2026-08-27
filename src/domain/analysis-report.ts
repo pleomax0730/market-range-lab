@@ -26,6 +26,9 @@ export type CandidateRequest = {
   price: number
   side: 'lower' | 'upper'
   netPremiumPerShare?: number
+  recoveryThroughDate?: string
+  recoveryThroughSessionDate?: string
+  recoveryWindowPeriods?: number
 }
 
 export type StatisticalReportInput = {
@@ -181,6 +184,7 @@ export function calculateStatisticalReport(
           effectiveSampleSize: candidateAnalysis.effectiveSampleSize,
           interval: input.analysis.interval ?? 'daily',
           netPremiumPerShare: input.candidate.netPremiumPerShare,
+          recoveryWindowPeriods: input.candidate.recoveryWindowPeriods,
         })
       : undefined
     candidate = {
@@ -278,6 +282,7 @@ function recoveryCsvFields(
     [`${prefix}P75CalendarDays`]: recovery?.p75CalendarDays ?? '',
     [`${prefix}MaximumRecoveredCalendarDays`]: recovery?.maximumCalendarDays ?? '',
     [`${prefix}Windows`]: JSON.stringify(recovery?.windows ?? []),
+    [`${prefix}CustomWindow`]: JSON.stringify(recovery?.customWindow ?? null),
   }
 }
 
@@ -429,6 +434,9 @@ function reportRows(report: AnalysisReport) {
         candidateTargetDate: report.candidate?.targetDate ?? '',
         candidateWeeks: report.candidate?.weeks ?? '',
         candidateTradingSessions: report.candidate?.tradingSessions ?? '',
+        candidateRecoveryThroughDate: report.candidate?.recoveryThroughDate ?? '',
+        candidateRecoveryThroughSessionDate: report.candidate?.recoveryThroughSessionDate ?? '',
+        candidateRecoveryWindowPeriods: report.candidate?.recoveryWindowPeriods ?? '',
         candidateSampleSize: report.candidate?.sampleSize ?? '',
         candidatePrice: report.candidate?.result.price ?? '',
         candidateGrade: report.candidate?.result.grade ?? '',

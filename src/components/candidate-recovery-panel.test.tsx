@@ -60,6 +60,15 @@ const candidate: CandidateAnalysis = {
       medianCalendarDays: 28,
       maximumCalendarDays: 340,
       windows,
+      customWindow: {
+        periods: 25,
+        eligibleAssignments: 100,
+        effectiveEligibleAssignments: 36.47,
+        recoveredAssignments: 78,
+        recoveryRate: 0.78,
+        lower95: 0.62,
+        upper95: 0.88,
+      },
     },
     breakEven: {
       netPremiumPerShare: 1.25,
@@ -79,9 +88,21 @@ const candidate: CandidateAnalysis = {
         p75CalendarDays: 28,
         maximumCalendarDays: 250,
         windows,
+        customWindow: {
+          periods: 25,
+          eligibleAssignments: 100,
+          effectiveEligibleAssignments: 36.47,
+          recoveredAssignments: 85,
+          recoveryRate: 0.85,
+          lower95: 0.7,
+          upper95: 0.93,
+        },
       },
     },
   },
+  recoveryThroughDate: '2026-08-30',
+  recoveryThroughSessionDate: '2026-08-28',
+  recoveryWindowPeriods: 25,
 }
 
 afterEach(cleanup)
@@ -94,18 +115,28 @@ describe('CandidateRecoveryPanel', () => {
           candidate={candidate}
           netPremiumPerShare="1.25"
           onNetPremiumPerShareChange={() => undefined}
+          recoveryThroughDate="2026-08-30"
+          onRecoveryThroughDateChange={() => undefined}
           dataLastDate="2026-07-22"
           historyStale
         />
       </TooltipProvider>,
     )
 
-    expect(screen.getByText('歷史履約後價格回復')).toBeInTheDocument()
+    expect(screen.getByText('接股後回本分析')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '接股後 25 個交易日內回本' })).toBeInTheDocument()
+    expect(screen.getByText((_, element) => (
+      element?.tagName === 'P' &&
+      element.textContent?.includes('85 次在期限內收盤回到目標價') === true
+    ))).toBeInTheDocument()
+    expect(screen.getByText('回到損益兩平價 $65.75')).toBeInTheDocument()
     expect(screen.getByText(/120\/850/)).toBeInTheDocument()
     expect(screen.getByText(/有效約 43.8 次/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '回到履約價' })).toBeInTheDocument()
-    expect(screen.getByText('回到損益兩平價')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '履約價（未計 Premium）' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '損益兩平價（實際回本）' })).toBeInTheDocument()
     expect(screen.getByText('$65.75')).toBeInTheDocument()
+    expect(screen.getAllByText(/以 2026-08-28 收盤為準/)).toHaveLength(2)
+    expect(screen.getByText('查看完整回本統計')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('歷史資料未更新')
   })
 
@@ -118,6 +149,8 @@ describe('CandidateRecoveryPanel', () => {
           candidate={{ ...candidate, netPremiumPerShare: undefined }}
           netPremiumPerShare={premium}
           onNetPremiumPerShareChange={setPremium}
+          recoveryThroughDate=""
+          onRecoveryThroughDateChange={() => undefined}
           dataLastDate="2026-07-22"
           historyStale={false}
         />
@@ -136,13 +169,15 @@ describe('CandidateRecoveryPanel', () => {
           candidate={{ ...candidate, recovery: undefined }}
           netPremiumPerShare=""
           onNetPremiumPerShareChange={() => undefined}
+          recoveryThroughDate=""
+          onRecoveryThroughDateChange={() => undefined}
           dataLastDate="2026-07-22"
           historyStale={false}
         />
       </TooltipProvider>,
     )
 
-    expect(screen.getByText('歷史履約後價格回復')).toBeInTheDocument()
-    expect(screen.getByText(/目前無法估計履約後的價格回復/)).toBeInTheDocument()
+    expect(screen.getByText('接股後回本分析')).toBeInTheDocument()
+    expect(screen.getByText(/目前無法估計接股後的回本時間/)).toBeInTheDocument()
   })
 })

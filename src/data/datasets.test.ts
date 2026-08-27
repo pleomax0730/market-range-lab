@@ -10,6 +10,7 @@ describe("defaultDashboardSettings", () => {
     expect(defaultDashboardSettings().annualCapitalReturnRatePct).toBe("10");
     expect(defaultDashboardSettings().aggressiveExpirationRiskPct).toBe("5");
     expect(defaultDashboardSettings().aggressiveTouchRiskPct).toBe("10");
+    expect(defaultDashboardSettings().recoveryThroughDate).toBe("");
   });
 });
 
@@ -50,5 +51,14 @@ describe("normalizeDashboardSettings", () => {
     };
 
     expect(normalizeDashboardSettings(saved).expiryDate).toBe("2026-08-19");
+  });
+
+  it("preserves a valid recovery observation date", () => {
+    const saved = {
+      ...defaultDashboardSettings(),
+      recoveryThroughDate: "2026-12-18",
+    };
+
+    expect(normalizeDashboardSettings(saved).recoveryThroughDate).toBe("2026-12-18");
   });
 });

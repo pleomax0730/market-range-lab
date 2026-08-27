@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCandidatePutRecovery,
+  resolveRecoveryWindowSelection,
   summarizeRecoveryObservations,
 } from './candidate-recovery'
 import type { HistoricalPath } from './statistics'
@@ -131,6 +132,7 @@ describe('candidate Put recovery', () => {
       anchorPrice: 100,
       strike: 80,
       netPremiumPerShare: 8,
+      recoveryWindowPeriods: 1,
       effectiveSampleSize: 2,
       interval: 'daily',
     })
@@ -139,11 +141,63 @@ describe('candidate Put recovery', () => {
     expect(result?.breakEven?.currentBreakEvenPrice).toBe(72)
     expect(result?.breakEven?.recovery.recoveredEvents).toBe(2)
     expect(result?.breakEven?.recovery.medianPeriods).toBe(0)
+    expect(result?.breakEven?.recovery.customWindow?.recoveryRate).toBe(1)
     expect(result?.strikeRecovery.recoveredEvents).toBe(0)
+    expect(result?.strikeRecovery.customWindow?.recoveryRate).toBe(0)
   })
 
   it('uses 1, 4 and 12 week windows for weekly-only history', () => {
     const summary = summarizeRecoveryObservations([], 'weekly', 0)
     expect(summary.windows.map((window) => window.periods)).toEqual([1, 4, 12])
+  })
+
+  it('calculates a custom recovery window without treating censored cases as failures', () => {
+    const summary = summarizeRecoveryObservations(
+      [
+        {
+          recoveredAfterPeriods: 3,
+          recoveryCalendarDays: 5,
+          availableFollowUpPeriods: 3,
+          availableFollowUpCalendarDays: 5,
+        },
+        {
+          availableFollowUpPeriods: 10,
+          availableFollowUpCalendarDays: 14,
+        },
+        {
+          recoveredAfterPeriods: 8,
+          recoveryCalendarDays: 12,
+          availableFollowUpPeriods: 8,
+          availableFollowUpCalendarDays: 12,
+        },
+        {
+          availableFollowUpPeriods: 2,
+          availableFollowUpCalendarDays: 4,
+        },
+      ],
+      'daily',
+      4,
+      5,
+    )
+
+    expect(summary.customWindow).toMatchObject({
+      periods: 5,
+      eligibleAssignments: 3,
+      recoveredAssignments: 1,
+      recoveryRate: 1 / 3,
+    })
+  })
+
+  it('maps a weekend observation date to the prior regular-session close', () => {
+    expect(resolveRecoveryWindowSelection(
+      '2026-08-21',
+      '2026-08-30',
+      'daily',
+    )).toEqual({
+      requestedDate: '2026-08-30',
+      throughSessionDate: '2026-08-28',
+      periods: 5,
+      periodUnit: 'trading-session',
+    })
   })
 })

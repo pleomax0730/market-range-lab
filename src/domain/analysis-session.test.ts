@@ -66,6 +66,7 @@ describe('buildAnalysisSession', () => {
         candidate: '90',
         candidateSide: 'lower',
         netPremiumPerShare: '1.25',
+        recoveryThroughDate: '2026-08-03',
         annualCapitalReturnRatePct: '12',
       },
     )
@@ -80,6 +81,9 @@ describe('buildAnalysisSession', () => {
       price: 90,
       side: 'lower',
       netPremiumPerShare: 1.25,
+      recoveryThroughDate: '2026-08-03',
+      recoveryThroughSessionDate: '2026-08-03',
+      recoveryWindowPeriods: 6,
     })
     expect(plan.context?.premiumAssumptions.annualCapitalReturnRate).toBe(0.12)
     expect(plan.modelKey).toContain(active.id)

@@ -53,13 +53,14 @@ export async function getActiveDatasetId(): Promise<string | undefined> {
 }
 
 export type DashboardSettings = {
-  settingsVersion: 5
+  settingsVersion: 6
   candidate: string
   candidateSide: 'lower' | 'upper'
   expiryDate: string
   aggressiveExpirationRiskPct: string
   aggressiveTouchRiskPct: string
   annualCapitalReturnRatePct: string
+  recoveryThroughDate: string
 }
 
 type PersistedDashboardSettings = Partial<Omit<DashboardSettings, 'settingsVersion'>> & {
@@ -72,19 +73,20 @@ type PersistedDashboardSettings = Partial<Omit<DashboardSettings, 'settingsVersi
 
 export function defaultDashboardSettings(): DashboardSettings {
   return {
-    settingsVersion: 5,
+    settingsVersion: 6,
     candidate: '',
     candidateSide: 'lower',
     expiryDate: '',
     aggressiveExpirationRiskPct: '5',
     aggressiveTouchRiskPct: '10',
     annualCapitalReturnRatePct: '10',
+    recoveryThroughDate: '',
   }
 }
 
 export function normalizeDashboardSettings(settings: PersistedDashboardSettings): DashboardSettings {
   return {
-    settingsVersion: 5,
+    settingsVersion: 6,
     candidate: settings.candidate ?? '',
     candidateSide: settings.candidateSide === 'upper' ? 'upper' : 'lower',
     expiryDate: /^\d{4}-\d{2}-\d{2}$/.test(settings.expiryDate ?? '') ? settings.expiryDate! : '',
@@ -96,6 +98,9 @@ export function normalizeDashboardSettings(settings: PersistedDashboardSettings)
       Number(settings.annualCapitalReturnRatePct) >= 0
         ? settings.annualCapitalReturnRatePct
         : '10',
+    recoveryThroughDate: /^\d{4}-\d{2}-\d{2}$/.test(settings.recoveryThroughDate ?? '')
+      ? settings.recoveryThroughDate!
+      : '',
   }
 }
 

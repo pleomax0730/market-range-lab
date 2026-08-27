@@ -23,6 +23,7 @@ import {
   type ExpiryHorizon,
 } from "./domain/expiry-horizon";
 import { previousRegularSession } from "./domain/market-calendar";
+import { resolveRecoveryWindowSelection } from "./domain/candidate-recovery";
 import {
   DEFAULT_AGGRESSIVE_THRESHOLD_PCT,
   GRADE_THRESHOLDS,
@@ -107,6 +108,9 @@ export function App() {
     dashboardDefaults.candidateSide,
   );
   const [netPremiumPerShare, setNetPremiumPerShare] = useState("");
+  const [recoveryThroughDate, setRecoveryThroughDate] = useState(
+    dashboardDefaults.recoveryThroughDate,
+  );
   const [annualCapitalReturnRatePct, setAnnualCapitalReturnRatePct] = useState(
     dashboardDefaults.annualCapitalReturnRatePct,
   );
@@ -141,6 +145,7 @@ export function App() {
         setAggressiveExpirationRiskPct(normalized.aggressiveExpirationRiskPct);
         setAggressiveTouchRiskPct(normalized.aggressiveTouchRiskPct);
         setAnnualCapitalReturnRatePct(normalized.annualCapitalReturnRatePct);
+        setRecoveryThroughDate(normalized.recoveryThroughDate);
       }
       setSettingsLoaded(true);
     })();
@@ -172,19 +177,33 @@ export function App() {
   const quickExpirySelection = quickExpiries.some((item) => item.targetDate === selectedExpiryDate)
     ? selectedExpiryDate
     : "custom";
+  const recoveryWindowSelection = useMemo(
+    () => active && recoveryThroughDate
+      ? resolveRecoveryWindowSelection(
+          selectedExpiryDate,
+          recoveryThroughDate,
+          active.interval,
+        )
+      : undefined,
+    [active, recoveryThroughDate, selectedExpiryDate],
+  );
+  const recoveryDateError = recoveryThroughDate && !recoveryWindowSelection
+    ? "觀察日期必須晚於到期日；休市日會以前一個正常交易日收盤計算。"
+    : undefined;
 
   useEffect(() => {
     if (!settingsLoaded) return;
     const timer = window.setTimeout(
       () =>
         void saveDashboardSettings({
-          settingsVersion: 5,
+          settingsVersion: 6,
           candidate,
           candidateSide,
           expiryDate: selectedExpiryDate,
           aggressiveExpirationRiskPct,
           aggressiveTouchRiskPct,
           annualCapitalReturnRatePct,
+          recoveryThroughDate,
         }),
       300,
     );
@@ -196,6 +215,7 @@ export function App() {
     aggressiveExpirationRiskPct,
     aggressiveTouchRiskPct,
     selectedExpiryDate,
+    recoveryThroughDate,
     settingsLoaded,
   ]);
 
@@ -207,6 +227,7 @@ export function App() {
       candidate,
       candidateSide,
       netPremiumPerShare,
+      recoveryThroughDate,
       annualCapitalReturnRatePct,
     }),
     [
@@ -216,6 +237,7 @@ export function App() {
       candidate,
       candidateSide,
       netPremiumPerShare,
+      recoveryThroughDate,
       selectedExpiryDate,
     ],
   );
@@ -826,6 +848,9 @@ export function App() {
                         anchorPrice={anchorPrice}
                         netPremiumPerShare={netPremiumPerShare}
                         onNetPremiumPerShareChange={setNetPremiumPerShare}
+                        recoveryThroughDate={recoveryThroughDate}
+                        onRecoveryThroughDateChange={setRecoveryThroughDate}
+                        recoveryDateError={recoveryDateError}
                         dataLastDate={active.bars.at(-1)?.date ?? ""}
                         historyStale={historyStale}
                         intraday={analysisIntraday}
@@ -1124,6 +1149,9 @@ function CandidateResult({
   anchorPrice,
   netPremiumPerShare,
   onNetPremiumPerShareChange,
+  recoveryThroughDate,
+  onRecoveryThroughDateChange,
+  recoveryDateError,
   dataLastDate,
   historyStale,
   intraday,
@@ -1134,6 +1162,9 @@ function CandidateResult({
   anchorPrice: number;
   netPremiumPerShare: string;
   onNetPremiumPerShareChange: (value: string) => void;
+  recoveryThroughDate: string;
+  onRecoveryThroughDateChange: (value: string) => void;
+  recoveryDateError?: string;
   dataLastDate: string;
   historyStale: boolean;
   intraday: boolean;
@@ -1202,6 +1233,9 @@ function CandidateResult({
         candidate={candidate}
         netPremiumPerShare={netPremiumPerShare}
         onNetPremiumPerShareChange={onNetPremiumPerShareChange}
+        recoveryThroughDate={recoveryThroughDate}
+        onRecoveryThroughDateChange={onRecoveryThroughDateChange}
+        recoveryDateError={recoveryDateError}
         dataLastDate={dataLastDate}
         historyStale={historyStale}
         intraday={intraday}

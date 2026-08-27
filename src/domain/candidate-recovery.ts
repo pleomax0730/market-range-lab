@@ -1,4 +1,8 @@
-import { differenceInCalendarDays, parseISO } from 'date-fns'
+import { differenceInCalendarDays, isValid, parseISO } from 'date-fns'
+import {
+  previousOrSameRegularSession,
+  regularSessionsAfter,
+} from './market-calendar'
 import type { HistoricalPath } from './statistics'
 import type {
   AssignmentRecoverySummary,
@@ -46,6 +50,14 @@ type CandidatePutRecoveryInput = {
   effectiveSampleSize: number
   interval: 'daily' | 'weekly'
   netPremiumPerShare?: number
+  recoveryWindowPeriods?: number
+}
+
+export type RecoveryWindowSelection = {
+  requestedDate: string
+  throughSessionDate: string
+  periods: number
+  periodUnit: 'trading-session' | 'week'
 }
 
 const Z_95 = 1.959963984540054
@@ -120,6 +132,7 @@ export function summarizeRecoveryObservations(
   observations: RecoveryObservation[],
   interval: 'daily' | 'weekly',
   effectiveAssignmentEvents = observations.length,
+  customWindowPeriods?: number,
 ): AssignmentRecoverySummary {
   const boundedEffectiveAssignments = boundedEffectiveSize(
     effectiveAssignmentEvents,
@@ -162,6 +175,40 @@ export function summarizeRecoveryObservations(
       )
     : undefined
 
+  const windowResult = (window: number) => {
+    const eligible = observations.filter((observation) =>
+      (observation.recoveredAfterPeriods !== undefined &&
+        observation.recoveredAfterPeriods <= window) ||
+      observation.availableFollowUpPeriods >= window,
+    )
+    const recoveredWithinWindow = eligible.filter(
+      (observation) => observation.recoveredAfterPeriods !== undefined &&
+        observation.recoveredAfterPeriods <= window,
+    ).length
+    const recoveryRate = eligible.length
+      ? recoveredWithinWindow / eligible.length
+      : 0
+    const effectiveEligibleAssignments = observations.length
+      ? boundedEffectiveAssignments * eligible.length / observations.length
+      : 0
+    const [lower95, upper95] = wilsonInterval(
+      recoveryRate,
+      effectiveEligibleAssignments,
+    )
+    return {
+      periods: window,
+      eligibleAssignments: eligible.length,
+      effectiveEligibleAssignments,
+      recoveredAssignments: recoveredWithinWindow,
+      recoveryRate,
+      ...(eligible.length ? { lower95, upper95 } : {}),
+    }
+  }
+  const validCustomWindow = Number.isInteger(customWindowPeriods) &&
+    customWindowPeriods !== undefined && customWindowPeriods > 0
+      ? customWindowPeriods
+      : undefined
+
   return {
     estimator: 'kaplan-meier',
     periodUnit: interval === 'daily' ? 'trading-session' : 'week',
@@ -179,35 +226,40 @@ export function summarizeRecoveryObservations(
       : {}),
     ...(medianCalendarDays === undefined ? {} : { medianCalendarDays }),
     ...(p75CalendarDays === undefined ? {} : { p75CalendarDays }),
-    windows: windowPeriods.map((window) => {
-      const eligible = observations.filter((observation) =>
-        (observation.recoveredAfterPeriods !== undefined &&
-          observation.recoveredAfterPeriods <= window) ||
-        observation.availableFollowUpPeriods >= window,
+    windows: windowPeriods.map(windowResult),
+    ...(validCustomWindow === undefined
+      ? {}
+      : { customWindow: windowResult(validCustomWindow) }),
+  }
+}
+
+export function resolveRecoveryWindowSelection(
+  expiryDate: string,
+  requestedDate: string,
+  interval: 'daily' | 'weekly',
+): RecoveryWindowSelection | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return undefined
+  const parsedExpiry = parseISO(expiryDate)
+  const parsedRequested = parseISO(requestedDate)
+  if (!isValid(parsedExpiry) || !isValid(parsedRequested)) return undefined
+  const throughSessionDate = previousOrSameRegularSession(requestedDate)
+  if (throughSessionDate <= expiryDate) return undefined
+  const periods = interval === 'daily'
+    ? regularSessionsAfter(expiryDate, throughSessionDate)
+    : Math.max(
+        1,
+        Math.round(differenceInCalendarDays(
+          parseISO(throughSessionDate),
+          parsedExpiry,
+        ) / 7),
       )
-      const recoveredWithinWindow = eligible.filter(
-        (observation) => observation.recoveredAfterPeriods !== undefined &&
-          observation.recoveredAfterPeriods <= window,
-      ).length
-      const recoveryRate = eligible.length
-        ? recoveredWithinWindow / eligible.length
-        : 0
-      const effectiveEligibleAssignments = observations.length
-        ? boundedEffectiveAssignments * eligible.length / observations.length
-        : 0
-      const [lower95, upper95] = wilsonInterval(
-        recoveryRate,
-        effectiveEligibleAssignments,
-      )
-      return {
-        periods: window,
-        eligibleAssignments: eligible.length,
-        effectiveEligibleAssignments,
-        recoveredAssignments: recoveredWithinWindow,
-        recoveryRate,
-        ...(eligible.length ? { lower95, upper95 } : {}),
-      }
-    }),
+  if (periods === undefined || periods <= 0) return undefined
+  return {
+    requestedDate,
+    throughSessionDate,
+    periods,
+    periodUnit: interval === 'daily' ? 'trading-session' : 'week',
   }
 }
 
@@ -293,6 +345,7 @@ export function calculateCandidatePutRecovery({
   effectiveSampleSize,
   interval,
   netPremiumPerShare,
+  recoveryWindowPeriods,
 }: CandidatePutRecoveryInput): CandidatePutRecoveryAnalysis | undefined {
   if (!(anchorPrice > 0) || !(strike > 0) || !bars.length || !paths.length) {
     return undefined
@@ -330,6 +383,7 @@ export function calculateCandidatePutRecovery({
     strikeObservations,
     interval,
     effectiveAssignmentEvents,
+    recoveryWindowPeriods,
   )
   const validPremiumValue = netPremiumPerShare !== undefined &&
     Number.isFinite(netPremiumPerShare) &&
@@ -362,6 +416,7 @@ export function calculateCandidatePutRecovery({
             breakEvenObservations,
             interval,
             effectiveAssignmentEvents,
+            recoveryWindowPeriods,
           ),
         }
       : undefined

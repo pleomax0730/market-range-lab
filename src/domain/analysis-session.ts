@@ -6,6 +6,7 @@ import {
 import { isWeeklyExpirySupported, resolveExpiryHorizon } from './expiry-horizon'
 import { resolveAggressiveThresholds } from './model'
 import { previousRegularSession } from './market-calendar'
+import { resolveRecoveryWindowSelection } from './candidate-recovery'
 import {
   DEFAULT_PREMIUM_ASSUMPTIONS,
   type PremiumAssumptions,
@@ -40,6 +41,7 @@ export type AnalysisSessionKnobs = {
   candidate: string
   candidateSide: 'lower' | 'upper'
   netPremiumPerShare?: string
+  recoveryThroughDate?: string
   annualCapitalReturnRatePct: string
 }
 
@@ -190,6 +192,13 @@ export function buildAnalysisSession(
     Number.isFinite(netPremiumPerShare) &&
     netPremiumPerShare >= 0 &&
     netPremiumPerShare < candidatePrice
+  const recoveryWindow = knobs.candidateSide === 'lower' && knobs.recoveryThroughDate
+    ? resolveRecoveryWindowSelection(
+        horizon.targetDate,
+        knobs.recoveryThroughDate,
+        dataset.interval,
+      )
+    : undefined
   const reportInput: StatisticalReportInput = {
     analysis: {
       bars: dataset.bars,
@@ -206,6 +215,13 @@ export function buildAnalysisSession(
           price: candidatePrice,
           side: knobs.candidateSide,
           ...(validNetPremium ? { netPremiumPerShare } : {}),
+          ...(recoveryWindow
+            ? {
+                recoveryThroughDate: recoveryWindow.requestedDate,
+                recoveryThroughSessionDate: recoveryWindow.throughSessionDate,
+                recoveryWindowPeriods: recoveryWindow.periods,
+              }
+            : {}),
         }
       : undefined,
     gradePaused,

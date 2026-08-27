@@ -27,7 +27,7 @@ function keysFor(input: StatisticalReportInput | undefined, analysisKey: string 
   if (!input || !analysisKey) return { scopeKey: '', reportKey: '' }
   const scopeKey = `${analysisKey}|paused=${input.gradePaused}`
   const candidate = input.candidate
-    ? `${input.candidate.targetDate}:${input.candidate.side}:${input.candidate.price}:premium=${input.candidate.netPremiumPerShare ?? ''}`
+    ? `${input.candidate.targetDate}:${input.candidate.side}:${input.candidate.price}:premium=${input.candidate.netPremiumPerShare ?? ''}:recovery=${input.candidate.recoveryThroughDate ?? ''}:${input.candidate.recoveryWindowPeriods ?? ''}`
     : 'none'
   return { scopeKey, reportKey: `${scopeKey}|candidate=${candidate}` }
 }
