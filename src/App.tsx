@@ -42,6 +42,7 @@ import { RiskGradeBadge } from "./components/risk-grade-badge";
 import { BacktestSummary } from "./components/backtest-summary";
 import { PutDecisionSummary } from "./components/put-decision-summary";
 import { MobileExportMenu } from "./components/mobile-export-menu";
+import { AnnualizedReturnPanel } from "./components/annualized-return-panel";
 import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
@@ -521,13 +522,16 @@ export function App() {
               <RefreshCw size={16} className="mr-2 animate-spin-fast" />讀取本機資料集
             </section>
           ) : !active ? (
-            <section className="panel flex min-h-80 flex-col items-center justify-center p-8 text-center">
-              <Database size={28} className="mb-3 text-[#6B7280]" />
-              <h2 className="font-bold">匯入 Daily 或 Weekly CSV 開始分析</h2>
-              <p className="mt-2 max-w-md text-sm text-[#6B7280]">
-                Daily 提供較完整的逐日路徑；只有 Weekly 時仍可用週 OHLC 進行較低解析度分析。
-              </p>
-            </section>
+            <>
+              <section className="panel flex min-h-80 flex-col items-center justify-center p-8 text-center">
+                <Database size={28} className="mb-3 text-[#6B7280]" />
+                <h2 className="font-bold">匯入 Daily 或 Weekly CSV 開始分析</h2>
+                <p className="mt-2 max-w-md text-sm text-[#6B7280]">
+                  Daily 提供較完整的逐日路徑；只有 Weekly 時仍可用週 OHLC 進行較低解析度分析。
+                </p>
+              </section>
+              <AnnualizedReturnPanel datasets={datasets} />
+            </>
           ) : (
             <>
               <section className="panel grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center">
@@ -885,6 +889,13 @@ export function App() {
                   )}
                 </div>
               </section>
+
+              <AnnualizedReturnPanel
+                key={active.id}
+                datasets={datasets}
+                activeSymbol={active.symbol}
+                initialPrice={anchorPrice}
+              />
 
               <section className="panel p-4 text-xs text-[#565656]">
                 <div className="grid gap-3 lg:grid-cols-2">
