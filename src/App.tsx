@@ -43,6 +43,7 @@ import { BacktestSummary } from "./components/backtest-summary";
 import { PutDecisionSummary } from "./components/put-decision-summary";
 import { MobileExportMenu } from "./components/mobile-export-menu";
 import { AnnualizedReturnPanel } from "./components/annualized-return-panel";
+import { PutYieldTargetPanel } from "./components/put-yield-target-panel";
 import type { HorizonAnalysis } from "./domain/types";
 import {
   defaultDashboardSettings,
@@ -941,6 +942,12 @@ export function App() {
               initialPrice={active ? anchorPrice : undefined}
             />
           )}
+          <PutYieldTargetPanel
+            activeSymbol={active?.symbol}
+            initialPrice={active ? anchorPrice : undefined}
+            initialReferenceDate={anchorDate}
+            initialExpirationDate={selectedExpiryDate}
+          />
         </div>
       </main>
     </div>
