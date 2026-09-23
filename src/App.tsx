@@ -530,7 +530,6 @@ export function App() {
                   Daily 提供較完整的逐日路徑；只有 Weekly 時仍可用週 OHLC 進行較低解析度分析。
                 </p>
               </section>
-              <AnnualizedReturnPanel datasets={datasets} />
             </>
           ) : (
             <>
@@ -890,13 +889,6 @@ export function App() {
                 </div>
               </section>
 
-              <AnnualizedReturnPanel
-                key={active.id}
-                datasets={datasets}
-                activeSymbol={active.symbol}
-                initialPrice={anchorPrice}
-              />
-
               <section className="panel p-4 text-xs text-[#565656]">
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div>
@@ -941,6 +933,13 @@ export function App() {
                 </div>
               </section>
             </>
+          )}
+          {historyCatalog.ready && (
+            <AnnualizedReturnPanel
+              datasets={datasets}
+              activeSymbol={active?.symbol}
+              initialPrice={active ? anchorPrice : undefined}
+            />
           )}
         </div>
       </main>

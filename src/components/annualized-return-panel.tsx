@@ -57,6 +57,7 @@ export type AnnualizedReturnPanelProps = {
 };
 
 type QuoteState = {
+  symbol?: string;
   price?: number;
   time?: string;
   source?: string;
@@ -72,13 +73,17 @@ export function AnnualizedReturnPanel({
   const datalistId = useId();
   const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
 
-  // Form states
-  const [symbol, setSymbol] = useState(activeSymbol ?? (datasets[0]?.symbol ?? ''));
+  const seededSymbol = activeSymbol ?? '';
+  const seededDataset = datasets.find((dataset) => dataset.symbol.toUpperCase() === normalizeSymbol(seededSymbol));
+  const seededClose = seededDataset?.bars.at(-1)?.close;
+  const seededPrice = initialPrice && initialPrice > 0 ? initialPrice : seededClose;
+
+  // These are intentionally independent analysis inputs. The imported dataset only supplies
+  // an initial suggestion; after first render, the user's values are never synchronized from it.
+  const [symbol, setSymbol] = useState(seededSymbol);
   const [buyDate, setBuyDate] = useState(todayStr);
   const [buyPrice, setBuyPrice] = useState(() => {
-    if (initialPrice && initialPrice > 0) return String(initialPrice);
-    const fallbackClose = datasets[0]?.bars.at(-1)?.close;
-    return fallbackClose && fallbackClose > 0 ? String(fallbackClose) : '100';
+    return seededPrice && seededPrice > 0 ? String(seededPrice) : '';
   });
 
   const [horizonOption, setHorizonOption] = useState<QuickHorizonOption>('1y');
@@ -117,6 +122,7 @@ export function AnnualizedReturnPanel({
         if (cancelled) return;
         if (data && Number.isFinite(data.price)) {
           setQuote({
+            symbol: normalizedSymbol,
             price: Number(data.price),
             time: data.quoteTime,
             source: data.source,
@@ -124,12 +130,12 @@ export function AnnualizedReturnPanel({
             unavailable: false,
           });
         } else {
-          setQuote({ loading: false, unavailable: true });
+          setQuote({ symbol: normalizedSymbol, loading: false, unavailable: true });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setQuote({ loading: false, unavailable: true });
+          setQuote({ symbol: normalizedSymbol, loading: false, unavailable: true });
         }
       });
 
@@ -138,13 +144,33 @@ export function AnnualizedReturnPanel({
     };
   }, [normalizedSymbol, isCurrentSymbolValid]);
 
-  const activeQuote = isCurrentSymbolValid ? quote : undefined;
+  const activeQuote = isCurrentSymbolValid && quote.symbol === normalizedSymbol ? quote : undefined;
 
   // Match local dataset if present
   const localDataset = useMemo(() => {
     const normalized = normalizeSymbol(symbol);
     return datasets.find((d) => d.symbol.toUpperCase() === normalized);
   }, [symbol, datasets]);
+
+  const activeDataset = useMemo(() => {
+    const normalized = normalizeSymbol(activeSymbol ?? '');
+    if (!normalized) return undefined;
+    return datasets.find((dataset) => dataset.symbol.toUpperCase() === normalized);
+  }, [activeSymbol, datasets]);
+
+  const activeContextPrice = initialPrice && initialPrice > 0
+    ? initialPrice
+    : activeDataset?.bars.at(-1)?.close;
+
+  function handleUseActiveContext() {
+    const nextSymbol = normalizeSymbol(activeSymbol ?? activeDataset?.symbol ?? '');
+    if (!nextSymbol) return;
+
+    setSymbol(nextSymbol);
+    if (activeContextPrice && activeContextPrice > 0) {
+      setBuyPrice(String(activeContextPrice));
+    }
+  }
 
   const parsedBuyPrice = Number(buyPrice);
   const isBuyPriceValid = Number.isFinite(parsedBuyPrice) && parsedBuyPrice > 0;
@@ -241,7 +267,21 @@ export function AnnualizedReturnPanel({
           <p className="mt-1 text-xs text-[#6B7280]">
             輸入任意標的、買進日期、買進均價與目標年化報酬率，繪製達成各目標所需之平均賣價曲線。
           </p>
+          <p className="mt-1 text-xs text-[#565656]">
+            這是獨立試算；匯入 CSV 只提供可選的標的提示與價格帶入，不會覆寫你的輸入。
+          </p>
         </div>
+        {(activeSymbol || activeDataset) && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 text-xs"
+            onClick={handleUseActiveContext}
+          >
+            帶入目前標的
+          </Button>
+        )}
       </div>
 
       {/* Input Form Controls */}
@@ -249,7 +289,7 @@ export function AnnualizedReturnPanel({
         {/* Symbol Input */}
         <div>
           <label className="field-label" htmlFor="annualized-symbol-input">
-            標的代號（Symbol）
+            自訂標的代號（Symbol）
           </label>
           <div className="relative">
             <Input
@@ -287,7 +327,7 @@ export function AnnualizedReturnPanel({
               </>
             ) : localDataset ? (
               <>
-                <span>本機收盤 {money.format(localDataset.bars.at(-1)?.close ?? 0)}</span>
+                <span>本機收盤參考 {money.format(localDataset.bars.at(-1)?.close ?? 0)}</span>
                 <button
                   type="button"
                   className="text-blue-600 underline hover:text-blue-800"
@@ -297,7 +337,7 @@ export function AnnualizedReturnPanel({
                 </button>
               </>
             ) : (
-              <span>純理論試算（未載入歷史資料）</span>
+              <span>可輸入未匯入的標的；歷史資料不是必要條件</span>
             )}
           </div>
         </div>
@@ -305,7 +345,7 @@ export function AnnualizedReturnPanel({
         {/* Buy Date Input */}
         <div>
           <label className="field-label" htmlFor="annualized-buy-date">
-            買進日期
+            自訂買進日期
           </label>
           <div className="flex gap-2">
             <Input
@@ -333,7 +373,7 @@ export function AnnualizedReturnPanel({
         {/* Average Buy Price Input */}
         <div>
           <label className="field-label" htmlFor="annualized-buy-price">
-            買進均價（USD）
+            自訂買進均價（USD）
           </label>
           <div className="relative">
             <Input
@@ -353,7 +393,7 @@ export function AnnualizedReturnPanel({
             </span>
           ) : (
             <span className="mt-1 block text-[11px] text-[#6B7280]">
-              毛成本均價（不含交易手續費與稅）
+              可自由修改；不含交易手續費與稅
             </span>
           )}
         </div>

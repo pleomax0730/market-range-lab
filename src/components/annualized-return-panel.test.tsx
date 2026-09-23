@@ -57,6 +57,53 @@ describe('AnnualizedReturnPanel', () => {
     expect(screen.getAllByText(/\+30% 年化/i).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('keeps custom symbol, buy price, and buy date independent from imported context', async () => {
+    const user = userEvent.setup();
+    renderWithTooltip(<AnnualizedReturnPanel datasets={mockDatasets} activeSymbol="PLTR" initialPrice={74} />);
+
+    const symbolInput = screen.getByLabelText(/標的代號/i);
+    const buyDateInput = screen.getByLabelText(/買進日期/i);
+    const buyPriceInput = screen.getByLabelText(/買進均價/i);
+
+    await user.clear(symbolInput);
+    await user.type(symbolInput, 'NVDA');
+    await user.clear(buyDateInput);
+    await user.type(buyDateInput, '2025-01-02');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '150.25');
+
+    expect(symbolInput).toHaveValue('NVDA');
+    expect(buyDateInput).toHaveValue('2025-01-02');
+    expect(buyPriceInput).toHaveValue(150.25);
+
+    await user.click(screen.getByRole('button', { name: /帶入目前標的/i }));
+    expect(symbolInput).toHaveValue('PLTR');
+    expect(buyPriceInput).toHaveValue(74);
+    expect(buyDateInput).toHaveValue('2025-01-02');
+  });
+
+  it('preserves custom inputs when the active imported dataset changes', () => {
+    const { rerender } = renderWithTooltip(
+      <AnnualizedReturnPanel datasets={mockDatasets} activeSymbol="PLTR" initialPrice={74} />,
+    );
+    fireEvent.change(screen.getByLabelText(/標的代號/i), { target: { value: 'NVDA' } });
+    fireEvent.change(screen.getByLabelText(/買進日期/i), { target: { value: '2025-01-02' } });
+    fireEvent.change(screen.getByLabelText(/買進均價/i), { target: { value: '150.25' } });
+
+    rerender(
+      <TooltipProvider>
+        <AnnualizedReturnPanel datasets={mockDatasets} activeSymbol="SOXL" initialPrice={129} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByLabelText(/標的代號/i)).toHaveValue('NVDA');
+    expect(screen.getByLabelText(/買進日期/i)).toHaveValue('2025-01-02');
+    expect(screen.getByLabelText(/買進均價/i)).toHaveValue(150.25);
+    fireEvent.click(screen.getByRole('button', { name: /帶入目前標的/i }));
+    expect(screen.getByLabelText(/標的代號/i)).toHaveValue('SOXL');
+    expect(screen.getByLabelText(/買進均價/i)).toHaveValue(129);
+  });
+
   it('allows adding a new return rate', async () => {
     const user = userEvent.setup();
     renderWithTooltip(<AnnualizedReturnPanel datasets={mockDatasets} />);
@@ -107,6 +154,7 @@ describe('AnnualizedReturnPanel', () => {
     const user = userEvent.setup();
     renderWithTooltip(<AnnualizedReturnPanel datasets={mockDatasets} />);
 
+    fireEvent.change(screen.getByLabelText(/買進均價/i), { target: { value: '100' } });
     const btn30d = screen.getAllByRole('button', { name: '30 天' })[0];
     await user.click(btn30d);
 
@@ -128,11 +176,12 @@ describe('AnnualizedReturnPanel', () => {
 
     const symbolInput = screen.getByLabelText(/標的代號/i);
     fireEvent.change(symbolInput, { target: { value: 'CUSTOM-TICKER' } });
+    fireEvent.change(screen.getByLabelText(/買進均價/i), { target: { value: '100' } });
 
     // Chart container is rendered and no crash occurs
     expect(screen.getByTestId('annualized-return-chart-container')).toBeInTheDocument();
     expect(screen.getByText(/CUSTOM-TICKER/i)).toBeInTheDocument();
-    expect(screen.getByText(/純理論試算（未載入歷史資料）/i)).toBeInTheDocument();
+    expect(screen.getByText(/可輸入未匯入的標的；歷史資料不是必要條件/i)).toBeInTheDocument();
   });
 
   it('omits today marker when buy date is in the future', () => {
@@ -141,6 +190,7 @@ describe('AnnualizedReturnPanel', () => {
     const buyDateInput = screen.getByLabelText(/買進日期/i);
     // Set buy date far in future
     fireEvent.change(buyDateInput, { target: { value: '2099-01-01' } });
+    fireEvent.change(screen.getByLabelText(/買進均價/i), { target: { value: '100' } });
 
     expect(screen.getByText(/買進日在未來（僅預測投射曲線）/i)).toBeInTheDocument();
     expect(screen.getByText(/尚未到達買進日/i)).toBeInTheDocument();
