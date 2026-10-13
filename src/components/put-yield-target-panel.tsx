@@ -175,14 +175,14 @@ export function PutYieldTargetPanel({
   }
 
   return (
-    <section className="panel p-4 sm:p-5" aria-labelledby="put-yield-target-heading" data-testid="put-yield-target-panel">
+    <section className="panel panel-accent-expiry p-4 sm:p-5" aria-labelledby="put-yield-target-heading" data-testid="put-yield-target-panel">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E5E5] pb-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="flex size-6 shrink-0 items-center justify-center rounded bg-[#0D0D0D] text-[#B5FF4D]">
               <Target size={14} />
             </div>
-            <h2 id="put-yield-target-heading" className="text-sm font-bold sm:text-base">目標年化賣 Put 試算</h2>
+            <h2 id="put-yield-target-heading" className="panel-heading">目標年化賣 Put 試算</h2>
             <TermHelp explanation="不使用 option chain。指定 Put 履約價與到期日後，反推達成各目標年化報酬所需的最低理論權利金。">
               模式 A
             </TermHelp>

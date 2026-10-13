@@ -1,4 +1,3 @@
-import { ChevronDown } from 'lucide-react'
 import type { CandidateAnalysis } from '../domain/analysis-report'
 import type {
   RecoveryFrontierAnalysis,
@@ -58,7 +57,7 @@ function RecoveryTargetDetails({
   return (
     <section className="min-w-0 py-4 lg:px-4 lg:first:pl-0 lg:last:pr-0">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-sm font-bold">{title}</h4>
+        <h4 className="panel-subheading">{title}</h4>
         <span className="num text-sm font-semibold">{money.format(targetPrice)}</span>
       </div>
       {!hasAssignments ? (
@@ -283,10 +282,10 @@ function RecoveryFrontierPanel({
   const selectClassName = 'h-10 w-full rounded-md border border-[#D8D8D8] bg-white px-3 text-sm text-[#0D0D0D] outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100'
 
   return (
-    <section className="mt-5 border-y border-[#DADADA] bg-[#FCFCFC] py-5">
+    <section className="mt-5 panel-group">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl">
-          <h4 className="text-base font-bold">歷史回復支持區間</h4>
+          <h4 className="text-sm font-bold">歷史回復支持區間</h4>
           <p className="mt-1 text-xs leading-5 text-[#565656]">
             掃描候選 Put 價位，只有回復率、95% 下限與有效履約事件同時達標才列入區間；這是歷史條件統計，不是安全履約價建議。
           </p>
@@ -471,8 +470,8 @@ export function CandidateRecoveryPanel({
   if (candidate.side !== 'lower') return null
   if (!candidate.recovery) {
     return (
-      <section className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
-        <h3 className="text-sm font-bold">接股後回本分析</h3>
+      <section className="panel panel-accent-recovery mt-6 p-4">
+        <h3 className="panel-heading">接股後回本分析</h3>
         <p className="mt-2 text-xs leading-5 text-[#6B7280]">
           沒有足夠的同星期幾、同交易日跨度歷史路徑，目前無法估計接股後的回本時間。
         </p>
@@ -527,9 +526,9 @@ export function CandidateRecoveryPanel({
   const frontierSettings = recoveryFrontierSettings ?? candidate.recoveryFrontier?.settings
 
   return (
-    <section className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
+    <section className="panel panel-accent-recovery mt-6 p-4 sm:p-5">
       <div>
-        <h3 className="text-sm font-bold">
+        <h3 className="panel-heading">
           <TermHelp explanation="先用目前候選 Put 的履約價／當前價比例，找出歷史上到期收盤低於等值履約價的接股代理案例，再追蹤後續收盤首次回到目標價的時間。">
             接股後回本分析
           </TermHelp>
@@ -667,15 +666,10 @@ export function CandidateRecoveryPanel({
         </div>
       )}
 
-      <details className="group mt-4 border-t border-[#E5E5E5]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded py-3 outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
-          <span>
-            <span className="block text-sm font-semibold">查看完整回本統計</span>
-            <span className="mt-0.5 block text-xs font-normal text-[#6B7280]">典型等待時間、95% 區間與其他觀察期間</span>
-          </span>
-          <ChevronDown className="shrink-0 text-[#6B7280] transition-transform duration-150 group-open:rotate-180" size={16} />
-        </summary>
-        <div className="grid gap-x-6 divide-y divide-[#E5E5E5] border-t border-[#EFEFEF] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+      <section className="panel-group mt-5">
+        <h4 className="text-sm font-bold">完整回本統計</h4>
+        <p className="mt-0.5 text-xs text-[#6B7280]">典型等待時間、95% 區間與其他觀察期間</p>
+        <div className="mt-3 grid gap-x-6 divide-y divide-[#E5E5E5] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
           {breakEvenMatchesInput && recovery.breakEven && (
             <RecoveryTargetDetails
               title="損益兩平價（實際回本）"
@@ -693,7 +687,7 @@ export function CandidateRecoveryPanel({
             customThroughSessionDate={customWindowMatchesInput ? candidate.recoveryThroughSessionDate : undefined}
           />
         </div>
-        <div className="border-t border-[#EFEFEF] py-3 text-xs leading-5 text-[#6B7280]">
+        <div className="mt-3 border-t border-[#E5E5E5] pt-3 text-xs leading-5 text-[#6B7280]">
           <p className="num">
             <TermHelp explanation={`原始歷史接股率使用未做當前波動放大的實際價格路徑。有效樣本修正後的近似雙側 95% 區間為 ${percent.format(recovery.historicalAssignmentLower95)}–${percent.format(recovery.historicalAssignmentUpper95)}。`}>
               原始歷史接股 {recovery.assignmentEvents}/{recovery.sampleSize} 次 · {percent.format(recovery.historicalAssignmentRate)}
@@ -706,7 +700,7 @@ export function CandidateRecoveryPanel({
             這是原始歷史重播{intraday ? '、盤中保守預覽' : ''}，未套用上方風險分級的當前波動放大，也不會產生「值得賣」的結論。
           </p>
         </div>
-      </details>
+      </section>
 
       {candidate.recoveryFrontier && frontierSettings && (
         <RecoveryFrontierPanel

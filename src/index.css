@@ -5,7 +5,14 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
 .num { font-variant-numeric: tabular-nums; }
-.panel { border: 1px solid var(--color-border-subtle); background: #fff; border-radius: 6px; }
+.panel { border: 1px solid var(--color-border-subtle); background: #fff; border-radius: 6px; box-shadow: 0 1px 2px rgb(13 13 13 / 0.05); }
+.panel-accent-expiry { border-left: 4px solid var(--chart-expiration); }
+.panel-accent-candidate { border-left: 4px solid var(--chart-candidate); }
+.panel-accent-recovery { border-left: 4px solid var(--chart-conservative); }
+.panel-accent-premium { border-left: 4px solid var(--chart-touch); }
+.panel-group { background: var(--color-surface-muted); border: 1px solid #ededed; border-radius: 6px; padding: 16px; }
+.panel-heading { font-size: 15px; font-weight: 700; color: #0d0d0d; }
+.panel-subheading { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-subtle); }
 .field-label { display: block; margin-bottom: 6px; color: var(--color-text-muted); font-size: 12px; font-weight: 600; }
 .field-label-control { display: flex; min-height: 2rem; align-items: center; }
 .risk-conservative { color: #137a3d; background: #e9f8ee; }

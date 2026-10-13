@@ -336,7 +336,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-4 p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:p-6">
+      <main className="mx-auto grid max-w-[1500px] grid-cols-1 gap-6 p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:p-6">
         <aside className="order-1 space-y-4 lg:order-1">
           {active && (
             <Button
@@ -517,7 +517,7 @@ export function App() {
           </div>
         </aside>
 
-        <div className="order-2 min-w-0 space-y-4 lg:order-2">
+        <div className="order-2 min-w-0 space-y-6 lg:order-2">
           {!historyCatalog.ready ? (
             <section className="panel flex min-h-80 items-center justify-center p-8 text-sm text-[#6B7280]">
               <RefreshCw size={16} className="mr-2 animate-spin-fast" />讀取本機資料集
@@ -668,10 +668,10 @@ export function App() {
                   </label>
                 </section>
               )}
-              <section className="panel p-4">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+              <section className="panel panel-accent-expiry p-4">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2"><h2 className="text-sm font-bold">到期價格區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin-fast" />統計更新中</span>}</div>
+                    <div className="flex items-center gap-2"><h2 className="panel-heading">到期價格區間</h2>{analysisLoading && <span className="flex items-center gap-1 text-xs text-[#6B7280]"><RefreshCw size={12} className="animate-spin-fast" />統計更新中</span>}</div>
                     <p className="mt-1 text-xs text-[#6B7280]">
                       {active.interval === "weekly"
                         ? "Weekly-only：只支援每週最後正常交易日到期；週中到期需要 Daily CSV。"
@@ -680,7 +680,9 @@ export function App() {
                         : "已收盤錨定：從下一交易日開始，按實際剩餘交易日計算路徑。"}
                     </p>
                   </div>
-                  <div className="grid w-full gap-2 sm:max-w-[500px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                </div>
+                <div className="panel-group">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <label className="min-w-0">
                       <span className="field-label field-label-control">
                         <TermHelp explanation="請依券商實際列出的選擇權到期日選擇。平台不連接 option chain，因此不會自動判斷哪些日期可交易。">到期日（ET）</TermHelp>
@@ -716,13 +718,12 @@ export function App() {
                         ))}
                       </select>
                     </label>
-                  </div>
                 </div>
-                <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6B7280]">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6B7280]">
                   {selectedExpiryHorizon && <span className="num">距評估基準 {selectedExpiryHorizon.tradingSessions} 個交易日</span>}
                   <span>每週快捷不代表券商一定提供該到期日；請以 IBKR 實際鏈上日期為準。</span>
                 </div>
-                <details className="group mb-4 border-y border-[#EFEFEF] py-2">
+                <details className="group mt-3 border-t border-[#E5E5E5] pt-3">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[#565656] outline-none focus-visible:ring-2 focus-visible:ring-blue-600 [&::-webkit-details-marker]:hidden">
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <TermHelp explanation="激進門檻是可調的風險偏好，不是市場共識；保守與安全門檻不會被改動。">
@@ -772,6 +773,7 @@ export function App() {
                     {aggressiveThresholdError ?? "預設 5%／10%；影響激進價格邊界與自訂價格分級，保守／安全門檻維持不變。"}
                   </p>
                 </details>
+                </div>
                 {historyStale && (
                   <p className="mt-1 text-xs font-semibold text-red-700">
                     {active.interval === "daily"
@@ -813,7 +815,7 @@ export function App() {
                 )}
               </section>
 
-              <section className="panel p-4 sm:p-5">
+              <section className="panel panel-accent-candidate p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -980,18 +982,6 @@ function RiskTable({
   return (
     <div>
       <PutDecisionSummary analysis={analysis} stale={stale} />
-      <details className="group mt-4 border-t border-[#E5E5E5] pt-1">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded py-3 text-sm font-semibold text-[#565656] outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
-          <span>查看歷史分布（ECDF）</span>
-          <ChevronDown className="transition-transform duration-150 group-open:rotate-180" size={16} />
-        </summary>
-        <DownsideDistributionChart
-          analysis={analysis}
-          anchorPrice={anchorPrice}
-          candidate={candidate}
-          stale={stale}
-        />
-      </details>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
         <colgroup>
@@ -1115,15 +1105,22 @@ function RiskTable({
           </strong>
         </div>
       </div>
-      <details className="group mt-3 border-t border-[#EFEFEF]">
+      <details className="group mt-4 border-t border-[#E5E5E5] pt-1">
         <summary className="flex cursor-pointer list-none items-center justify-between rounded py-3 outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
           <span>
-            <strong className="block text-xs text-[#565656]">進階模型診斷</strong>
-            <small className="mt-0.5 block text-[11px] text-[#6B7280]">歷史分位數、bootstrap、EVT 與波動調整</small>
+            <strong className="block text-sm font-semibold text-[#565656]">進階分布與模型診斷</strong>
+            <small className="mt-0.5 block text-[11px] text-[#6B7280]">歷史分布 ECDF、歷史分位數、bootstrap、EVT 與波動調整</small>
           </span>
           <ChevronDown className="text-[#6B7280] transition-transform duration-150 group-open:rotate-180" size={16} />
         </summary>
-        <div className="grid grid-cols-2 gap-3 pb-2 pt-1 text-xs text-[#565656] lg:grid-cols-4">
+        <div className="panel-group">
+          <DownsideDistributionChart
+            analysis={analysis}
+            anchorPrice={anchorPrice}
+            candidate={candidate}
+            stale={stale}
+          />
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-3 text-xs text-[#565656] lg:grid-cols-4">
           <div>
             <span className="block text-[#6B7280]"><TermHelp explanation="Historical path 1st percentile：約只有 1% 的同類歷史路徑曾出現更深的盤中跌幅。這是經驗分位數，不是保證。">歷史路徑 1%</TermHelp></span>
             <strong className="num">{percent.format(analysis.empirical.pathLowPct)}</strong>
@@ -1167,6 +1164,7 @@ function RiskTable({
                 : `${analysis.volatilityAdjustment.medianScale.toFixed(2)}×`}
             </strong>
             <small className="num block text-[#6B7280]">封頂 {analysis.volatilityAdjustment.cappedPathCount} / {analysis.sampleSize}</small>
+          </div>
           </div>
         </div>
       </details>
@@ -1224,46 +1222,48 @@ function CandidateResult({
         ? "目前價內 Call"
         : undefined;
   return (
-    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm lg:grid-cols-4">
-      <div>
-        <span className="field-label">分級</span>
-        <RiskGradeBadge grade={result.grade} />
-      </div>
-      <div>
-        <span className="field-label">相對當前價</span>
-        <AnimatedNumber as="strong" value={percent.format(result.price / anchorPrice - 1)} />
-        {optionPosition && (
-          <small className="mt-1 block font-semibold text-[#92400E]">
-            {optionPosition}
+    <div className="mt-4">
+      <div className="grid grid-cols-2 gap-3 border-t border-[#E5E5E5] pt-4 text-sm lg:grid-cols-4">
+        <div>
+          <span className="field-label">分級</span>
+          <RiskGradeBadge grade={result.grade} />
+        </div>
+        <div>
+          <span className="field-label">相對當前價</span>
+          <AnimatedNumber as="strong" value={percent.format(result.price / anchorPrice - 1)} />
+          {optionPosition && (
+            <small className="mt-1 block font-semibold text-[#92400E]">
+              {optionPosition}
+            </small>
+          )}
+        </div>
+        <div>
+          <span className="field-label"><TermHelp explanation="到期估計是所選到期日收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
+          <AnimatedNumber
+            as="strong"
+            value={`${percent.format(result.expirationBreach)} / [${percent.format(result.expirationLower95)}, ${percent.format(result.expirationUpper95)}]`}
+          />
+          <small className="num block text-[#6B7280]">
+            {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
+            events
           </small>
-        )}
-      </div>
-      <div>
-        <span className="field-label"><TermHelp explanation="到期估計是所選到期日收盤穿越候選價的歷史比例；中括號是雙側 95% CI。分級另外使用方向正確的單側 95% 風險上限。">到期估計 / 雙側 95% CI</TermHelp></span>
-        <AnimatedNumber
-          as="strong"
-          value={`${percent.format(result.expirationBreach)} / [${percent.format(result.expirationLower95)}, ${percent.format(result.expirationUpper95)}]`}
-        />
-        <small className="num block text-[#6B7280]">
-          {Math.round(result.expirationBreach * sampleSize)} / {sampleSize}{" "}
-          events
-        </small>
-        <small className="num block text-[#6B7280]">
-          分級用單側上限 {percent.format(result.expirationRiskUpper95)}
-        </small>
-      </div>
-      <div>
-        <span className="field-label"><TermHelp explanation="期間觸及會檢查參考時點至到期日的整條價格路徑最高或最低點，因此通常高於只看到期收盤的穿越機率；中括號是雙側 95% CI。">期間觸及估計 / 雙側 95% CI</TermHelp></span>
-        <AnimatedNumber
-          as="strong"
-          value={`${percent.format(result.pathTouch)} / [${percent.format(result.pathTouchLower95)}, ${percent.format(result.pathTouchUpper95)}]`}
-        />
-        <small className="num block text-[#6B7280]">
-          {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
-        </small>
-        <small className="num block text-[#6B7280]">
-          分級用單側上限 {percent.format(result.pathTouchRiskUpper95)}
-        </small>
+          <small className="num block text-[#6B7280]">
+            分級用單側上限 {percent.format(result.expirationRiskUpper95)}
+          </small>
+        </div>
+        <div>
+          <span className="field-label"><TermHelp explanation="期間觸及會檢查參考時點至到期日的整條價格路徑最高或最低點，因此通常高於只看到期收盤的穿越機率；中括號是雙側 95% CI。">期間觸及估計 / 雙側 95% CI</TermHelp></span>
+          <AnimatedNumber
+            as="strong"
+            value={`${percent.format(result.pathTouch)} / [${percent.format(result.pathTouchLower95)}, ${percent.format(result.pathTouchUpper95)}]`}
+          />
+          <small className="num block text-[#6B7280]">
+            {Math.round(result.pathTouch * sampleSize)} / {sampleSize} events
+          </small>
+          <small className="num block text-[#6B7280]">
+            分級用單側上限 {percent.format(result.pathTouchRiskUpper95)}
+          </small>
+        </div>
       </div>
       <CandidateRecoveryPanel
         candidate={candidate}

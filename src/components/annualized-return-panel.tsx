@@ -249,7 +249,7 @@ export function AnnualizedReturnPanel({
   const isFutureBuy = buyDate > todayStr;
 
   return (
-    <section className="panel p-4 sm:p-5" aria-labelledby="annualized-return-heading">
+    <section className="panel panel-accent-recovery p-4 sm:p-5" aria-labelledby="annualized-return-heading">
       {/* Section Header */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E5E5] pb-3">
         <div className="min-w-0 flex-1">
@@ -257,7 +257,7 @@ export function AnnualizedReturnPanel({
             <div className="flex size-6 shrink-0 items-center justify-center rounded bg-[#0D0D0D] text-[#B5FF4D]">
               <TrendingUp size={14} />
             </div>
-            <h2 id="annualized-return-heading" className="text-sm font-bold sm:text-base">
+            <h2 id="annualized-return-heading" className="panel-heading">
               年化報酬目標賣價趨勢
             </h2>
             <TermHelp explanation="依據複利年化公式：目標賣價 = 買進均價 × (1 + 年化報酬率)^(持有日曆天數 / 365)。此試算採用日曆天數複利計算，屬於未扣除股利、手續費、交易稅等成本之毛目標賣價。">

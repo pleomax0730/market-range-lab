@@ -52,8 +52,8 @@ export function PremiumAnalysisPanel({
 
   if (!premium) {
     return (
-      <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 text-xs text-[#6B7280] lg:col-span-4">
-        <strong className="block text-[#0D0D0D]">歷史 Premium 壓力參考</strong>
+      <div className="panel panel-accent-premium mt-6 p-4 text-xs text-[#6B7280]">
+        <strong className="panel-heading block">歷史 Premium 壓力參考</strong>
         <p className="mt-1">{candidate.premiumUnavailableReason ?? '目前無法計算。'}</p>
       </div>
     )
@@ -65,10 +65,10 @@ export function PremiumAnalysisPanel({
     Number(annualCapitalReturnRatePct) >= 0
 
   return (
-    <div className="col-span-2 mt-1 border-t border-[#E5E5E5] pt-4 lg:col-span-4">
+    <div className="panel panel-accent-premium mt-6 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-bold">歷史 Premium 壓力參考</h3>
+          <h3 className="panel-heading">歷史 Premium 壓力參考</h3>
           <p className="mt-1 text-xs text-[#6B7280]">
             現金擔保 Put · 完整歷史重播；不是選擇權估價、合理價或賣出建議。
           </p>
@@ -112,30 +112,32 @@ export function PremiumAnalysisPanel({
         </label>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 border-y border-[#E5E5E5] [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(odd)]:border-r [&>*]:border-[#E5E5E5]">
-        <PremiumThreshold
-          label="歷史統計賠付參考"
-          explanation="Historical loss confidence floor：歷史到期平均賠付的 95% 信賴上限，加上每股交易成本。它不是市場理論價，也不代表安全。"
-          value={premium.statisticalFloorPerShare}
-        />
-        <PremiumThreshold
-          label="加資金報酬參考"
-          explanation="Capital hurdle reference：歷史統計賠付參考，再加上履約價乘以年化要求報酬與實際日數。此處以現金擔保 Put 的完整履約價作資金基礎。"
-          value={premium.capitalReturnFloorPerShare}
-        />
-        <PremiumThreshold
-          label="輕度壓力參考"
-          explanation="Light tail stress reference：資金報酬參考，再加上 CVaR95 與歷史平均賠付差額的 10%。這個 10% 是風險偏好，不是統計校準或客觀常數。"
-          value={premium.lightTailFloorPerShare}
-        />
-        <PremiumThreshold
-          label="保守壓力參考"
-          explanation="Conservative tail stress reference：資金報酬參考，再加上 CVaR95 與歷史平均賠付差額的 25%。這是使用者風險偏好，不是統計校準；它也不會降低觸及或到期跌破機率。"
-          value={premium.conservativeTailFloorPerShare}
-        />
+      <div className="panel-group mt-4">
+        <div className="grid grid-cols-2 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(odd)]:border-r [&>*]:border-[#E5E5E5]">
+          <PremiumThreshold
+            label="歷史統計賠付參考"
+            explanation="Historical loss confidence floor：歷史到期平均賠付的 95% 信賴上限，加上每股交易成本。它不是市場理論價，也不代表安全。"
+            value={premium.statisticalFloorPerShare}
+          />
+          <PremiumThreshold
+            label="加資金報酬參考"
+            explanation="Capital hurdle reference：歷史統計賠付參考，再加上履約價乘以年化要求報酬與實際日數。此處以現金擔保 Put 的完整履約價作資金基礎。"
+            value={premium.capitalReturnFloorPerShare}
+          />
+          <PremiumThreshold
+            label="輕度壓力參考"
+            explanation="Light tail stress reference：資金報酬參考，再加上 CVaR95 與歷史平均賠付差額的 10%。這個 10% 是風險偏好，不是統計校準或客觀常數。"
+            value={premium.lightTailFloorPerShare}
+          />
+          <PremiumThreshold
+            label="保守壓力參考"
+            explanation="Conservative tail stress reference：資金報酬參考，再加上 CVaR95 與歷史平均賠付差額的 25%。這是使用者風險偏好，不是統計校準；它也不會降低觸及或到期跌破機率。"
+            value={premium.conservativeTailFloorPerShare}
+          />
+        </div>
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
         <div>
           <dt className="text-[#6B7280]"><TermHelp explanation="Expected expiration loss：把每條歷史路徑的 max(履約價－到期價, 0) 平均；包含沒有損失的路徑。">歷史平均賠付</TermHelp></dt>
           <dd className="num font-semibold">{money.format(premium.expectedLossPerShare)}</dd>
@@ -162,7 +164,7 @@ export function PremiumAnalysisPanel({
         </div>
       </dl>
 
-      <div className="mt-3 border-t border-[#EFEFEF] pt-3 text-xs text-[#565656]">
+      <div className="panel-group mt-4 text-xs text-[#565656]">
         <p className="num leading-5">
           公式拆解：統計 {money.format(premium.expectedLossInterval95[1])} + 成本 {money.format(premium.transactionCostPerShare)}
           {' · '}資金 {money.format(premium.capitalHurdlePerShare)}
